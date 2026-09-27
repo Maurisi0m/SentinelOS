@@ -65,15 +65,15 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
     server_healthy = False
     start_time = time.time()
     
-    for attempt in range(1, 21):
+    for attempt in range(1, 25):
         time.sleep(1)
         try:
-            req = urllib.request.Request("http://127.0.0.1:8001/api/services", headers={"User-Agent": "SentinelInstaller"})
-            with urllib.request.urlopen(req, timeout=2) as resp:
+            req = urllib.request.Request("http://127.0.0.1:8001/api/data", headers={"User-Agent": "SentinelInstaller"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
                 if resp.status == 200:
                     latency = round((time.time() - start_time) * 1000)
                     server_healthy = True
-                    print_success(f"Servidor activo y respondiendo correctamente en http://127.0.0.1:8001 (Latencia: {latency} ms)")
+                    print_success(f"Servidor y API de telemetría activos (HTTP 200) en http://127.0.0.1:8001 (Latencia: {latency} ms)")
                     break
         except Exception:
             # Reintentar probando la ruta raíz
@@ -83,7 +83,7 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
                     if resp_root.status == 200:
                         latency = round((time.time() - start_time) * 1000)
                         server_healthy = True
-                        print_success(f"Servidor activo y respondiendo en http://127.0.0.1:8001 (Latencia: {latency} ms)")
+                        print_success(f"Servidor web activo en http://127.0.0.1:8001 (Latencia: {latency} ms)")
                         break
             except Exception:
                 pass
