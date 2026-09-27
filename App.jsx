@@ -1518,9 +1518,18 @@ function App() {
   };
 
   const renderNetwork = () => {
+    if (!data) {
+      return (
+        <div className="glass-panel" style={{ textAlign: 'center', padding: '3rem' }}>
+          <RefreshCw size={28} color="#3b82f6" style={{ animation: 'spin 1.5s linear infinite' }} />
+          <p style={{ marginTop: '1rem', color: '#94a3b8' }}>Cargando telemetría de red y topología...</p>
+        </div>
+      );
+    }
+
     // Inject Self into Tailscale Peers if exists
-    const tsPeers = data.tailscale?.Peer ? Object.values(data.tailscale.Peer) : [];
-    if (data.tailscale?.Self) {
+    const tsPeers = data?.tailscale?.Peer ? Object.values(data.tailscale.Peer) : [];
+    if (data?.tailscale?.Self) {
       tsPeers.unshift({ ...data.tailscale.Self, HostName: `${data.tailscale.Self.HostName} (Self)` });
     }
 

@@ -151,23 +151,25 @@ export default function NetworkTopologyView({ data, handleAction }) {
     links.push({ source: 'node-core-master', target: 'node-klipper', label: 'Port 7125' });
 
     // Nodos 6: Contenedores Docker (Microservicios)
-    const containers = data?.containers || [];
+    const containers = Array.isArray(data?.containers) ? data.containers : [];
     containers.slice(0, 3).forEach((c, idx) => {
-      const cId = `node-docker-${c.id}`;
+      if (!c) return;
+      const cId = `node-docker-${c.id || idx}`;
+      const cStatusStr = typeof c.status === 'string' ? c.status : '';
       nodes.push({
         id: cId,
-        name: `Docker: ${c.name}`,
+        name: `Docker: ${c.name || 'Contenedor'}`,
         type: 'docker',
         category: 'server',
         ip: c.ports || 'Bridge Net',
-        status: c.status.includes('Up') ? 'online' : 'idle',
+        status: cStatusStr.includes('Up') ? 'online' : 'idle',
         latency: 1,
         icon: 'database',
         details: {
-          image: c.image,
-          status: c.status,
-          command: c.command,
-          containerId: c.id
+          image: c.image || 'imagen',
+          status: cStatusStr || 'N/A',
+          command: c.command || '',
+          containerId: c.id || ''
         },
         x: 740,
         y: 350 + (idx * 90)
@@ -178,6 +180,7 @@ export default function NetworkTopologyView({ data, handleAction }) {
     // Nodos 7: Dispositivos Tailscale (Laptops y Clientes Remotos)
     const tsPeers = data?.tailscale?.Peer ? Object.values(data.tailscale.Peer) : [];
     tsPeers.slice(0, 4).forEach((p, idx) => {
+      if (!p) return;
       const pId = `node-ts-${idx}`;
       nodes.push({
         id: pId,
@@ -191,7 +194,7 @@ export default function NetworkTopologyView({ data, handleAction }) {
         details: {
           os: p.OS || 'Dispositivo Remoto',
           lastSeen: p.LastSeen ? new Date(p.LastSeen).toLocaleString() : 'Conectado ahora',
-          tailscaleId: p.ID,
+          tailscaleId: p.ID || '',
           role: 'Cliente de Laboratorio Cifrado'
         },
         x: 180 + (idx * 160),
@@ -201,25 +204,28 @@ export default function NetworkTopologyView({ data, handleAction }) {
     });
 
     // Nodos 8: Dispositivos de Red Local LAN (Vecinos ARP / PCs)
-    const lanNeighbors = data?.network?.neighbors || [];
+    const lanNeighbors = Array.isArray(data?.network?.neighbors) ? data.network.neighbors : [];
     lanNeighbors.slice(0, 4).forEach((n, idx) => {
+      if (!n) return;
       const nId = `node-lan-${idx}`;
-      const isPhone = n.device_type?.toLowerCase().includes('phone') || n.vendor?.toLowerCase().includes('apple');
+      const dTypeStr = typeof n.device_type === 'string' ? n.device_type.toLowerCase() : '';
+      const vendorStr = typeof n.vendor === 'string' ? n.vendor.toLowerCase() : '';
+      const isPhone = dTypeStr.includes('phone') || vendorStr.includes('apple');
       nodes.push({
         id: nId,
-        name: `${n.vendor} (${n.device_type || 'Equipo LAN'})`,
+        name: `${n.vendor || 'Dispositivo'} (${n.device_type || 'Equipo LAN'})`,
         type: isPhone ? 'phone' : 'workstation',
         category: 'lan',
-        ip: n.ip,
-        mac: n.mac,
+        ip: n.ip || '192.168.1.x',
+        mac: n.mac || '',
         status: 'online',
         latency: 5 + (idx * 3),
         icon: isPhone ? 'smartphone' : 'laptop',
         details: {
-          interface: n.interface,
-          vendor: n.vendor,
-          deviceType: n.device_type,
-          macAddress: n.mac,
+          interface: n.interface || 'eth0',
+          vendor: n.vendor || 'Desconocido',
+          deviceType: n.device_type || 'Genérico',
+          macAddress: n.mac || 'N/A',
           role: 'Estación de Trabajo / Dispositivo LAN'
         },
         x: 80 + (idx * 140),
@@ -233,15 +239,19 @@ export default function NetworkTopologyView({ data, handleAction }) {
 
   // Filtrado de Nodos
   const filteredNodes = useMemo(() => {
-    return topologyData.nodes.filter(n => {
+    return (topologyData?.nodes || []).filter(n => {
+      if (!n) return false;
       if (filterType !== 'all' && n.category !== filterType) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        return n.name.toLowerCase().includes(q) || n.ip.toLowerCase().includes(q) || (n.mac && n.mac.toLowerCase().includes(q));
+        const nName = typeof n.name === 'string' ? n.name.toLowerCase() : '';
+        const nIp = typeof n.ip === 'string' ? n.ip.toLowerCase() : '';
+        const nMac = typeof n.mac === 'string' ? n.mac.toLowerCase() : '';
+        return nName.includes(q) || nIp.includes(q) || nMac.includes(q);
       }
       return true;
     });
-  }, [topologyData.nodes, filterType, searchQuery]);
+  }, [topologyData?.nodes, filterType, searchQuery]);
 
   // Enviar Ping Real
   const handlePingNode = async (host) => {
