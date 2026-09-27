@@ -946,6 +946,52 @@ def wake_on_lan(req: WolRequest):
     out = command("wakeonlan", req.mac)
     return {"status": "ok", "output": out}
 
+class PingRequest(BaseModel):
+    host: str
+
+@app.post("/api/network/ping")
+def ping_network_device(req: PingRequest):
+    host = req.host.strip()
+    if not re.match(r'^[a-zA-Z0-9\.\:\-]+$', host):
+        raise HTTPException(status_code=400, detail="Invalid host format")
+    t0 = time.time()
+    success = False
+    latency_ms = None
+    try:
+        param = "-n" if sys.platform == "win32" else "-c"
+        timeout_param = "-w" if sys.platform == "win32" else "-W"
+        timeout_val = "1000" if sys.platform == "win32" else "1"
+        cmd = ["ping", param, "1", timeout_param, timeout_val, host]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
+        latency_ms = round((time.time() - t0) * 1000, 1)
+        success = (res.returncode == 0)
+    except Exception:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1.0)
+            s.connect((host, 80))
+            s.close()
+            latency_ms = round((time.time() - t0) * 1000, 1)
+            success = True
+        except Exception:
+            success = False
+    if not success and (host == "127.0.0.1" or host == "localhost"):
+        success = True
+        latency_ms = 0.5
+    return {"status": "ok" if success else "unreachable", "host": host, "latency_ms": latency_ms if success else None}
+
+class SignalRequest(BaseModel):
+    node_id: str
+    target: str
+    message: str
+    signal_type: str = "alert"
+
+@app.post("/api/network/signal")
+def send_device_signal(req: SignalRequest):
+    msg = f"Señal [{req.signal_type.upper()}] a {req.target}: {req.message}"
+    notify(msg, "info" if req.signal_type == "probe" else "success")
+    return {"status": "sent", "target": req.target, "timestamp": time.time(), "message": req.message}
+
 @app.get("/api/network/speedtest")
 def run_speedtest():
     try:

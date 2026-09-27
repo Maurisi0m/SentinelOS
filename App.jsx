@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X } from 'lucide-react';
+import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Terminal as TerminalXTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -8,6 +8,7 @@ import '@xterm/xterm/css/xterm.css';
 import './index.css';
 import SentinelIntro from './components/SentinelIntro';
 import SentinelCockpit from './components/SentinelCockpit';
+import NetworkTopologyView from './components/NetworkTopologyView';
 
 const API_URL = "/api";
 
@@ -40,6 +41,7 @@ function App() {
   const [showSentinelIntro, setShowSentinelIntro] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isGlobalFullscreen, setIsGlobalFullscreen] = useState(false);
+  const [networkSubTab, setNetworkSubTab] = useState('topology');
 
   // Interactive Onboarding Tour State
   const [tourActive, setTourActive] = useState(false);
@@ -495,15 +497,6 @@ function App() {
 
     return (
       <>
-        <div className="glass-panel" style={{marginBottom: '1.5rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)'}}>
-          <div className="panel-header" style={{marginBottom: '0.5rem'}}><Zap color="#3b82f6"/><h2>Alexa Smart Home Webhook</h2></div>
-          <p style={{fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: 0}}>
-            Link this local endpoint to IFTTT or VoiceMonkey to have Alexa read out the real-time server status:
-          </p>
-          <code style={{display: 'block', background: 'rgba(0,0,0,0.5)', padding: '0.75rem', borderRadius: '4px', color: 'var(--accent)', marginTop: '0.5rem', userSelect: 'all'}}>
-            GET http://{window.location.hostname}:8001/api/alexa/status
-          </code>
-        </div>
         <div className="widget-grid">
           <div className="summary-widget">
             <div className="widget-icon"><Power size={24}/></div>
@@ -1532,128 +1525,176 @@ function App() {
     }
 
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
-        <div className="glass-panel">
-          <div className="panel-header" style={{justifyContent: 'space-between'}}>
-            <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem'}}><Shield /><h2>Tailscale VPN Manager</h2></div>
-            <div style={{display: 'flex', gap: '0.5rem'}}>
-              <button className="btn btn-primary" onClick={() => handleAction('tailscale', {action: 'up'})}>TS Up</button>
-              <button className="btn" onClick={() => handleAction('tailscale', {action: 'up', params: '--advertise-exit-node'})}>Advertise Exit Node</button>
-              <button className="btn btn-danger" onClick={() => handleAction('tailscale', {action: 'down'})}>TS Down</button>
-            </div>
-          </div>
-          <div className="stat-row" style={{marginBottom: '1rem'}}><span className="stat-label">Tailnet</span><span className="stat-value" style={{color: 'var(--accent)'}}>{data.tailscale?.CurrentTailnet?.MagicDNSSuffix || 'Disconnected'}</span></div>
-          <table className="os-table">
-            <thead><tr><th>Peer</th><th>OS</th><th>IP (IPv4)</th><th>Last Seen</th></tr></thead>
-            <tbody>
-              {tsPeers.map((peer, idx) => (
-                <tr key={idx}>
-                  <td><div style={{display:'flex', alignItems:'center', gap:'0.5rem'}}><div className={`status-indicator ${peer.Online ? 'status-online' : 'status-offline'}`}></div><span style={{fontWeight: peer.HostName.includes('(Self)') ? 'bold' : 'normal'}}>{peer.HostName}</span></div></td>
-                  <td>{peer.OS}</td>
-                  <td>{(peer.TailscaleIPs || [])[0]}</td>
-                  <td style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>{peer.LastSeen ? new Date(peer.LastSeen).toLocaleString() : 'Active'}</td>
-                </tr>
-              ))}
-              {tsPeers.length === 0 && <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>Tailscale is offline or not configured.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="glass-panel">
-          <div className="panel-header" style={{justifyContent: 'space-between'}}>
-            <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
-              <Gauge /><h2>Internet Speedtest</h2>
-            </div>
-            <button className="btn btn-primary" onClick={runSpeedtest} disabled={speedtestRunning}>
-              {speedtestRunning ? "Testing..." : "Run Speedtest"}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* Sub-navegación de Red y Topología */}
+        <div className="glass-panel" style={{ padding: '0.6rem 1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          {[
+            { id: 'topology', label: 'Diagrama de Topología Visual', icon: <Layers size={16} /> },
+            { id: 'tailscale', label: 'Tailscale VPN', icon: <Shield size={16} /> },
+            { id: 'lan', label: 'Dispositivos LAN & Puertos', icon: <Router size={16} /> },
+            { id: 'speedtest', label: 'Speedtest', icon: <Gauge size={16} /> },
+            { id: 'all', label: 'Vista Completa', icon: <Activity size={16} /> }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setNetworkSubTab(tab.id)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '0.45rem 0.9rem',
+                borderRadius: '6px',
+                fontSize: '0.84rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: networkSubTab === tab.id ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                border: networkSubTab === tab.id ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.08)',
+                color: networkSubTab === tab.id ? '#60a5fa' : '#cbd5e1',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              {tab.icon} {tab.label}
             </button>
-          </div>
-          {speedtestResult && speedtestResult.ping && (
-            <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginTop: '1rem', textAlign: 'center'}}>
-              <div className="stat-card" style={{padding: '1rem'}}>
-                <div style={{fontSize: '0.9rem', color: 'var(--text-secondary)'}}>Ping</div>
-                <div style={{fontSize: '1.5rem', fontWeight: 'bold'}}>{speedtestResult.ping.toFixed(1)} ms</div>
-              </div>
-              <div className="stat-card" style={{padding: '1rem'}}>
-                <div style={{fontSize: '0.9rem', color: 'var(--text-secondary)'}}>Download</div>
-                <div style={{fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--success)'}}>{(speedtestResult.download / 1e6).toFixed(2)} Mbps</div>
-              </div>
-              <div className="stat-card" style={{padding: '1rem'}}>
-                <div style={{fontSize: '0.9rem', color: 'var(--text-secondary)'}}>Upload</div>
-                <div style={{fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--accent)'}}>{(speedtestResult.upload / 1e6).toFixed(2)} Mbps</div>
-              </div>
-            </div>
-          )}
+          ))}
         </div>
 
-        <div className="glass-panel" style={{position: 'relative'}}>
-          <div className="panel-header" style={{justifyContent: 'space-between'}}>
-            <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}><Router /><h2>Local LAN Devices</h2></div>
-            <div style={{display: 'flex', gap: '0.5rem'}}>
-              <button className="btn btn-secondary" onClick={() => forceNetworkScan('quick')} disabled={isNetworkScanning}>
-                 {isNetworkScanning ? 'Scanning...' : <><RefreshCw size={16}/> Quick Scan</>}
-              </button>
-              <button className="btn btn-primary" onClick={() => forceNetworkScan('deep')} disabled={isNetworkScanning}>
-                 {isNetworkScanning ? 'Scanning...' : <><RefreshCw size={16}/> Deep Scan</>}
-              </button>
-            </div>
-          </div>
-          {isNetworkScanning && (
-            <div style={{position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: 'var(--bg-lighter)', overflow: 'hidden', borderRadius: '8px 8px 0 0'}}>
-              <div style={{height: '100%', background: 'var(--accent)', animation: 'pulse 1s infinite', width: '50%'}}></div>
-            </div>
-          )}
-          <table className="os-table" style={{opacity: isNetworkScanning ? 0.5 : 1}}>
-            <thead><tr><th>IP</th><th>MAC</th><th>Interface</th><th>Vendor</th><th>Device Type</th></tr></thead>
-            <tbody>
-              {data.network.neighbors.map(n => (
-                <tr key={n.ip}>
-                  <td>{n.ip}</td>
-                  <td style={{fontSize: '0.85rem', fontFamily: 'monospace'}}>{n.mac}</td>
-                  <td style={{color: 'var(--text-secondary)'}}>{n.interface}</td>
-                  <td style={{color: 'var(--text-secondary)'}}>{n.vendor}</td>
-                  <td style={{color: 'var(--accent)', fontWeight: 500}}>{n.device_type}</td>
-                  <td style={{textAlign: 'right'}}>
-                    <button className="btn" title="Wake-on-LAN" style={{padding: '0.2rem 0.5rem'}} onClick={() => handleWoL(n.mac)}><Zap size={14}/></button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {/* 1. Vista de Topología Visual Interactiva (Nodos, Sondas, Señales y Recursos) */}
+        {(networkSubTab === 'topology' || networkSubTab === 'all') && (
+          <NetworkTopologyView data={data} handleAction={handleAction} />
+        )}
 
-        <div className="glass-panel">
-          <div className="panel-header"><Shield /><h2>UFW Firewall Status: <span style={{color: data.system.ufw?.enabled ? 'var(--success)' : 'var(--danger)'}}>{data.system.ufw?.enabled ? 'ACTIVE' : 'INACTIVE'}</span></h2></div>
-          <table className="os-table">
-            <thead><tr><th>Rule</th></tr></thead>
-            <tbody>
-              {data.system.ufw?.rules?.map((r, i) => (
-                <tr key={i}>
-                  <td style={{fontFamily: 'monospace'}}>{r}</td>
-                </tr>
-              ))}
-              {(!data.system.ufw?.rules || data.system.ufw.rules.length === 0) && (
-                <tr><td style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No firewall rules or UFW inactive.</td></tr>
+        {/* 2. Gestor Tailscale VPN */}
+        {(networkSubTab === 'tailscale' || networkSubTab === 'all') && (
+          <div className="glass-panel">
+            <div className="panel-header" style={{justifyContent: 'space-between'}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem'}}><Shield /><h2>Tailscale VPN Manager</h2></div>
+              <div style={{display: 'flex', gap: '0.5rem'}}>
+                <button className="btn btn-primary" onClick={() => handleAction('tailscale', {action: 'up'})}>TS Up</button>
+                <button className="btn" onClick={() => handleAction('tailscale', {action: 'up', params: '--advertise-exit-node'})}>Advertise Exit Node</button>
+                <button className="btn btn-danger" onClick={() => handleAction('tailscale', {action: 'down'})}>TS Down</button>
+              </div>
+            </div>
+            <div className="stat-row" style={{marginBottom: '1rem'}}><span className="stat-label">Tailnet</span><span className="stat-value" style={{color: 'var(--accent)'}}>{data.tailscale?.CurrentTailnet?.MagicDNSSuffix || 'Disconnected'}</span></div>
+            <table className="os-table">
+              <thead><tr><th>Peer</th><th>OS</th><th>IP (IPv4)</th><th>Last Seen</th></tr></thead>
+              <tbody>
+                {tsPeers.map((peer, idx) => (
+                  <tr key={idx}>
+                    <td><div style={{display:'flex', alignItems:'center', gap:'0.5rem'}}><div className={`status-indicator ${peer.Online ? 'status-online' : 'status-offline'}`}></div><span style={{fontWeight: peer.HostName.includes('(Self)') ? 'bold' : 'normal'}}>{peer.HostName}</span></div></td>
+                    <td>{peer.OS}</td>
+                    <td>{(peer.TailscaleIPs || [])[0]}</td>
+                    <td style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>{peer.LastSeen ? new Date(peer.LastSeen).toLocaleString() : 'Active'}</td>
+                  </tr>
+                ))}
+                {tsPeers.length === 0 && <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>Tailscale is offline or not configured.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* 3. Speedtest */}
+        {(networkSubTab === 'speedtest' || networkSubTab === 'all') && (
+          <div className="glass-panel">
+            <div className="panel-header" style={{justifyContent: 'space-between'}}>
+              <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
+                <Gauge /><h2>Internet Speedtest</h2>
+              </div>
+              <button className="btn btn-primary" onClick={runSpeedtest} disabled={speedtestRunning}>
+                {speedtestRunning ? "Testing..." : "Run Speedtest"}
+              </button>
+            </div>
+            {speedtestResult && speedtestResult.ping && (
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginTop: '1rem', textAlign: 'center'}}>
+                <div className="stat-card" style={{padding: '1rem'}}>
+                  <div style={{fontSize: '0.9rem', color: 'var(--text-secondary)'}}>Ping</div>
+                  <div style={{fontSize: '1.5rem', fontWeight: 'bold'}}>{speedtestResult.ping.toFixed(1)} ms</div>
+                </div>
+                <div className="stat-card" style={{padding: '1rem'}}>
+                  <div style={{fontSize: '0.9rem', color: 'var(--text-secondary)'}}>Download</div>
+                  <div style={{fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--success)'}}>{(speedtestResult.download / 1e6).toFixed(2)} Mbps</div>
+                </div>
+                <div className="stat-card" style={{padding: '1rem'}}>
+                  <div style={{fontSize: '0.9rem', color: 'var(--text-secondary)'}}>Upload</div>
+                  <div style={{fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--accent)'}}>{(speedtestResult.upload / 1e6).toFixed(2)} Mbps</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 4. Dispositivos LAN, Firewall y Puertos Abiertos */}
+        {(networkSubTab === 'lan' || networkSubTab === 'all') && (
+          <>
+            <div className="glass-panel" style={{position: 'relative'}}>
+              <div className="panel-header" style={{justifyContent: 'space-between'}}>
+                <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}><Router /><h2>Local LAN Devices</h2></div>
+                <div style={{display: 'flex', gap: '0.5rem'}}>
+                  <button className="btn btn-secondary" onClick={() => forceNetworkScan('quick')} disabled={isNetworkScanning}>
+                     {isNetworkScanning ? 'Scanning...' : <><RefreshCw size={16}/> Quick Scan</>}
+                  </button>
+                  <button className="btn btn-primary" onClick={() => forceNetworkScan('deep')} disabled={isNetworkScanning}>
+                     {isNetworkScanning ? 'Scanning...' : <><RefreshCw size={16}/> Deep Scan</>}
+                  </button>
+                </div>
+              </div>
+              {isNetworkScanning && (
+                <div style={{position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: 'var(--bg-lighter)', overflow: 'hidden', borderRadius: '8px 8px 0 0'}}>
+                  <div style={{height: '100%', background: 'var(--accent)', animation: 'pulse 1s infinite', width: '50%'}}></div>
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
+              <table className="os-table" style={{opacity: isNetworkScanning ? 0.5 : 1}}>
+                <thead><tr><th>IP</th><th>MAC</th><th>Interface</th><th>Vendor</th><th>Device Type</th><th>Acciones</th></tr></thead>
+                <tbody>
+                  {data.network?.neighbors?.map(n => (
+                    <tr key={n.ip}>
+                      <td>{n.ip}</td>
+                      <td style={{fontSize: '0.85rem', fontFamily: 'monospace'}}>{n.mac}</td>
+                      <td style={{color: 'var(--text-secondary)'}}>{n.interface}</td>
+                      <td style={{color: 'var(--text-secondary)'}}>{n.vendor}</td>
+                      <td style={{color: 'var(--accent)', fontWeight: 500}}>{n.device_type}</td>
+                      <td style={{textAlign: 'right'}}>
+                        <button className="btn" title="Wake-on-LAN" style={{padding: '0.2rem 0.5rem'}} onClick={() => handleWoL(n.mac)}><Zap size={14}/></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-        <div className="glass-panel">
-          <div className="panel-header"><Database /><h2>Open Ports (Listening)</h2></div>
-          <table className="os-table">
-            <thead><tr><th>Protocol</th><th>State</th><th>Local Address:Port</th></tr></thead>
-            <tbody>
-              {data.system.open_ports?.map((p, i) => (
-                <tr key={i}>
-                  <td style={{fontWeight: 'bold'}}>{p.protocol}</td>
-                  <td style={{color: 'var(--success)'}}>{p.state}</td>
-                  <td style={{fontFamily: 'monospace', color: 'var(--accent)'}}>{p.local_address}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            <div className="glass-panel">
+              <div className="panel-header"><Shield /><h2>UFW Firewall Status: <span style={{color: data.system.ufw?.enabled ? 'var(--success)' : 'var(--danger)'}}>{data.system.ufw?.enabled ? 'ACTIVE' : 'INACTIVE'}</span></h2></div>
+              <table className="os-table">
+                <thead><tr><th>Rule</th></tr></thead>
+                <tbody>
+                  {data.system.ufw?.rules?.map((r, i) => (
+                    <tr key={i}>
+                      <td style={{fontFamily: 'monospace'}}>{r}</td>
+                    </tr>
+                  ))}
+                  {(!data.system.ufw?.rules || data.system.ufw.rules.length === 0) && (
+                    <tr><td style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No firewall rules or UFW inactive.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="glass-panel">
+              <div className="panel-header"><Database /><h2>Open Ports (Listening)</h2></div>
+              <table className="os-table">
+                <thead><tr><th>Protocol</th><th>State</th><th>Local Address:Port</th></tr></thead>
+                <tbody>
+                  {data.system.open_ports?.map((p, i) => (
+                    <tr key={i}>
+                      <td style={{fontWeight: 'bold'}}>{p.protocol}</td>
+                      <td style={{color: 'var(--success)'}}>{p.state}</td>
+                      <td style={{fontFamily: 'monospace', color: 'var(--accent)'}}>{p.local_address}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
     );
   };
