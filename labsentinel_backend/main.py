@@ -270,6 +270,103 @@ def deduce_device_type(vendor: str) -> str:
     if "ubiquiti" in v_lower: return "UniFi Device"
     return "Generic Device"
 
+def get_cpu_model() -> str:
+    try:
+        if sys.platform == "win32":
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DESCRIPTION\System\CentralProcessor\0')
+            name, _ = winreg.QueryValueEx(key, 'ProcessorNameString')
+            return name.strip()
+        elif os.path.exists("/proc/cpuinfo"):
+            with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
+                for line in f:
+                    if "model name" in line:
+                        return line.split(":", 1)[1].strip()
+    except Exception:
+        pass
+    import platform
+    return platform.processor() or "Generic Processor"
+
+def get_gpu_info() -> dict:
+    try:
+        if shutil.which("nvidia-smi"):
+            out = subprocess.check_output(
+                ["nvidia-smi", "--query-gpu=name,memory.total,memory.used,memory.free,utilization.gpu,temperature.gpu,driver_version", "--format=csv,noheader,nounits"],
+                text=True, timeout=2, stderr=subprocess.DEVNULL
+            ).strip()
+            if out:
+                lines = out.splitlines()
+                parts = [p.strip() for p in lines[0].split(",")]
+                if len(parts) >= 7:
+                    return {
+                        "has_gpu": True,
+                        "model": parts[0],
+                        "vram_total_mb": round(float(parts[1])),
+                        "vram_used_mb": round(float(parts[2])),
+                        "vram_free_mb": round(float(parts[3])),
+                        "usage": round(float(parts[4]), 1),
+                        "temp": round(float(parts[5]), 1),
+                        "driver": parts[6],
+                        "vendor": "NVIDIA"
+                    }
+    except Exception:
+        pass
+
+    if sys.platform == "win32":
+        try:
+            cmd = 'Get-CimInstance Win32_VideoController | Select-Object -Property Name, AdapterRAM, DriverVersion | ConvertTo-Json'
+            out = subprocess.check_output(["powershell", "-NoProfile", "-Command", cmd], text=True, timeout=3, stderr=subprocess.DEVNULL)
+            data = json.loads(out)
+            item = data[0] if isinstance(data, list) and len(data) > 0 else (data if isinstance(data, dict) else None)
+            if item and item.get("Name"):
+                name = item.get("Name")
+                ram = item.get("AdapterRAM") or 0
+                return {
+                    "has_gpu": True,
+                    "model": name,
+                    "vram_total_mb": round(ram / (1024 * 1024)) if ram > 0 else 0,
+                    "vram_used_mb": 0,
+                    "vram_free_mb": 0,
+                    "usage": 0.0,
+                    "temp": 0.0,
+                    "driver": str(item.get("DriverVersion", "")),
+                    "vendor": "Windows/CIM"
+                }
+        except Exception:
+            pass
+
+    if sys.platform != "win32" and shutil.which("lspci"):
+        try:
+            out = subprocess.check_output(["lspci"], text=True, timeout=2, stderr=subprocess.DEVNULL)
+            for line in out.splitlines():
+                if "VGA compatible controller" in line or "3D controller" in line:
+                    model = line.split(":", 2)[-1].strip()
+                    return {
+                        "has_gpu": True,
+                        "model": model,
+                        "vram_total_mb": 0,
+                        "vram_used_mb": 0,
+                        "vram_free_mb": 0,
+                        "usage": 0.0,
+                        "temp": 0.0,
+                        "driver": "",
+                        "vendor": "Linux/PCI"
+                    }
+        except Exception:
+            pass
+
+    return {
+        "has_gpu": False,
+        "model": "None",
+        "vram_total_mb": 0,
+        "vram_used_mb": 0,
+        "vram_free_mb": 0,
+        "usage": 0.0,
+        "temp": 0.0,
+        "driver": "",
+        "vendor": "None"
+    }
+
 # Historical Buffer (Last 300 seconds = 5 minutes)
 history_buffer = deque(maxlen=300)
 
@@ -342,11 +439,18 @@ async def metric_collector():
             e_temp = klipper.get("extruder", {}).get("temperature", 0)
             b_temp = klipper.get("heater_bed", {}).get("temperature", 0)
             
+            # GPU metrics
+            gpu_data = get_gpu_info()
+            gpu_u = gpu_data.get("usage", 0.0) if gpu_data.get("has_gpu") else 0.0
+            gpu_t = gpu_data.get("temp", 0.0) if gpu_data.get("has_gpu") else 0.0
+
             history_buffer.append({
                 "time": now,
                 "cpu": round(cpu_p, 1),
                 "ram": round(mem_p, 1),
                 "temp": round(cpu_t, 1),
+                "gpu": round(gpu_u, 1),
+                "gpu_temp": round(gpu_t, 1),
                 "net_rx": round(net_s["rx"] / 1024 / 1024, 2), # MB/s
                 "net_tx": round(net_s["tx"] / 1024 / 1024, 2), # MB/s
                 "disk_r": round(disk_s["read"] / 1024 / 1024, 2), # MB/s
@@ -379,6 +483,7 @@ def collect_data() -> dict:
             fast_data["system"] = dict(fast_data.get("system", {}))
             fast_data["system"]["memory"] = get_mem_stats()
             fast_data["system"]["loadavg"] = get_load_avg()
+            fast_data["system"]["gpu"] = get_gpu_info()
         except Exception:
             pass
         fast_data["metrics_history"] = list(history_buffer)
@@ -597,6 +702,8 @@ def collect_data() -> dict:
         },
         "tailscale": tailscale,
         "system": {
+            "cpu_model": get_cpu_model(),
+            "gpu": get_gpu_info(),
             "memory": mem_stats,
             "disks": disks,
             "uptime": uptime,

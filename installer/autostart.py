@@ -33,12 +33,14 @@ def configure_autostart(os_info: dict, root_dir: str, lang="es") -> bool:
                 f.write('@echo off\n')
                 f.write(f'cd /d "{backend_dir}"\n')
                 f.write(f'start "" /b "{py_exe}" -m uvicorn main:app --host 0.0.0.0 --port 8001\n')
+                f.write('timeout /t 3 /nobreak >nul\n')
+                f.write('start "" http://localhost:8001\n')
 
             # 1. Intentar Task Scheduler (ONLOGON)
             task_cmd = f'schtasks /Create /TN "SentinelOS_Service" /TR "\"{start_bat}\"" /SC ONLOGON /F'
             res = subprocess.run(task_cmd, shell=True, capture_output=True)
             if res.returncode == 0:
-                print_success("Tarea de inicio programada en Windows Task Scheduler (ONLOGON)." if lang == "es" else "Autostart scheduled in Windows Task Scheduler.")
+                print_success("Tarea de inicio programada en Windows Task Scheduler (ONLOGON con apertura de navegador)." if lang == "es" else "Autostart scheduled in Windows Task Scheduler with browser launch.")
                 return True
 
             # 2. Fallback: Carpeta de Inicio de Windows (Startup folder de usuario sin requerir privilegios Admin)
@@ -49,7 +51,7 @@ def configure_autostart(os_info: dict, root_dir: str, lang="es") -> bool:
                     startup_bat = os.path.join(startup_dir, "SentinelOS_AutoStart.cmd")
                     with open(startup_bat, "w", encoding="utf-8") as f:
                         f.write(f'call "{start_bat}"\n')
-                    print_success("Servicio registrado en la Carpeta de Inicio de Windows." if lang == "es" else "Service registered in Windows Startup folder.")
+                    print_success("Servicio y navegador registrados en la Carpeta de Inicio de Windows." if lang == "es" else "Service and browser registered in Windows Startup folder.")
                     return True
 
             return False
@@ -58,3 +60,22 @@ def configure_autostart(os_info: dict, root_dir: str, lang="es") -> bool:
             return False
 
     return False
+
+def disable_autostart(os_info: dict, root_dir: str):
+    """Limpia tareas programadas si el usuario decidió no habilitar el autoinicio."""
+    system = os_info["system"]
+    if system == "Windows":
+        try:
+            subprocess.run('schtasks /Delete /TN "SentinelOS_Service" /F', shell=True, capture_output=True)
+            appdata = os.environ.get("APPDATA")
+            if appdata:
+                startup_bat = os.path.join(appdata, r"Microsoft\Windows\Start Menu\Programs\Startup\SentinelOS_AutoStart.cmd")
+                if os.path.exists(startup_bat):
+                    os.remove(startup_bat)
+        except Exception:
+            pass
+    elif system == "Linux":
+        try:
+            subprocess.run("systemctl disable labsentinel.service 2>/dev/null || true", shell=True, capture_output=True)
+        except Exception:
+            pass

@@ -20,8 +20,9 @@ from .deps_manager import ensure_python_libraries, check_and_install_docker
 from .i18n import I18n
 from .skills import AVAILABLE_SKILLS
 from .tailscale import setup_tailscale_interactive
-from .autostart import configure_autostart
+from .autostart import configure_autostart, disable_autostart
 from .service_runner import start_and_verify_services
+import webbrowser
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -124,9 +125,11 @@ def main():
     print_header(i18n.t("step_autostart"), "4/6")
     prompt_auto = i18n.t("step_autostart_desc")
     auto_choice = input(prompt_auto).strip().lower()
-    if auto_choice not in ['n', 'no']:
+    autostart_enabled = (auto_choice not in ['n', 'no'])
+    if autostart_enabled:
         configure_autostart(os_info, ROOT_DIR, lang)
     else:
+        disable_autostart(os_info, ROOT_DIR)
         print_info("Inicio automático omitido por el usuario." if lang == "es" else "Autostart skipped by user.")
 
     # -------------------------------------------------------------
@@ -134,9 +137,12 @@ def main():
     # -------------------------------------------------------------
     print_header(i18n.t("step4"), "5/6")
     ts_ask = input(i18n.t("tailscale_prompt")).strip().lower()
-    remote_url = ""
+    ts_data = {"url": "", "ip": "", "domain": ""}
     if ts_ask not in ['n', 'no']:
-        remote_url = setup_tailscale_interactive(lang)
+        ts_data = setup_tailscale_interactive(lang)
+
+    remote_url = ts_data.get("url", "")
+    ts_ip = ts_data.get("ip", "")
 
     # -------------------------------------------------------------
     # PASO 6: DESPLIEGUE REAL Y VERIFICACIÓN EN VIVO HTTP
@@ -153,16 +159,26 @@ def main():
     print("\n" + f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74)
     print(f"  🎉  {i18n.t('success_title')}")
     print("═" * 74 + f"{Colors.RESET}")
-    print(f"  {Colors.BOLD}🌐  Enlace Red Local:{Colors.RESET}       {Colors.CYAN}{local_display_url}{Colors.RESET}  (Comprobado ✔)")
-    print(f"  {Colors.BOLD}💻  Enlace Localhost:{Colors.RESET}       {Colors.CYAN}http://127.0.0.1:8001{Colors.RESET} (Comprobado ✔)")
+    print(f"  {Colors.BOLD}💻  Enlace Localhost:{Colors.RESET}           {Colors.CYAN}http://127.0.0.1:8001{Colors.RESET} (Comprobado ✔)")
+    print(f"  {Colors.BOLD}🌐  Enlace Red Local (LAN):{Colors.RESET}     {Colors.CYAN}{local_display_url}{Colors.RESET} (Comprobado ✔)")
+    if ts_ip:
+        print(f"  {Colors.BOLD}🔒  IP Red Segura Tailscale:{Colors.RESET}   {Colors.CYAN}http://{ts_ip}:8001{Colors.RESET} (Comprobado ✔)")
     if remote_url:
-        print(f"  {Colors.BOLD}🔒  Enlace Remoto Tailscale:{Colors.RESET} {Colors.GREEN}{remote_url}{Colors.RESET} (HTTPS Cifrado ✔)")
+        print(f"  {Colors.BOLD}✨  Enlace Cifrado MagicDNS:{Colors.RESET}   {Colors.GREEN}{remote_url}{Colors.RESET} (HTTPS Cifrado ✔)")
     
     active_skills_list = [s.id for s in configured_skills] if configured_skills else ["Core STEM"]
-    print(f"  {Colors.BOLD}🧩  Módulos Desplegados:{Colors.RESET}    {', '.join(active_skills_list)}")
+    print(f"  {Colors.BOLD}🧩  Módulos Desplegados:{Colors.RESET}        {', '.join(active_skills_list)}")
     print(f"  {Colors.BOLD}🚀  Unir Servidores Satélite (Mesh Fleet):{Colors.RESET}")
     print(f"      curl -fsSL {local_display_url}/api/mesh/join.sh | bash\n")
     print(f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74 + f"{Colors.RESET}\n")
+
+    # Si es sistema de escritorio (Windows o con interfaz grafica), abrir navegador por defecto
+    if os_info.get("system") == "Windows" or os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        try:
+            print_info("Abriendo panel de control en tu navegador predeterminado..." if lang == "es" else "Opening cockpit in default browser...")
+            webbrowser.open("http://127.0.0.1:8001")
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     main()
