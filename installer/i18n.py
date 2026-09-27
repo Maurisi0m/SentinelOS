@@ -29,6 +29,8 @@ TRANSLATIONS = {
         "skills_config_header": "CONFIGURACIÓN DE SKILL:",
         "deploying": "Iniciando contenedores Docker y servicios del sistema...",
         "success_title": "¡SENTINEL OS HA SIDO INSTALADO Y CONFIGURADO CON ÉXITO!",
+        "step_autostart": "Inicio Automático del Servidor (Boot / Reinicio)",
+        "step_autostart_desc": "¿Deseas que SentinelOS se inicie automáticamente al encender el equipo/servidor? (Opcional pero Recomendado) [S/n]: ",
         "access_local": "Acceso Red Local:",
         "access_remote": "Acceso Remoto Tailscale HTTPS:",
         "docs_link": "Documentación y Gestión de Nodos:"
@@ -60,6 +62,8 @@ TRANSLATIONS = {
         "skills_config_header": "CONFIGURING SKILL:",
         "deploying": "Starting Docker containers and core system services...",
         "success_title": "SENTINEL OS HAS BEEN SUCCESSFULLY INSTALLED & CONFIGURED!",
+        "step_autostart": "Server Autostart (On Boot / Reboot)",
+        "step_autostart_desc": "Enable SentinelOS to start automatically on system boot? (Optional but Recommended) [Y/n]: ",
         "access_local": "Local Network URL:",
         "access_remote": "Tailscale HTTPS URL:",
         "docs_link": "Documentation & Node Management:"

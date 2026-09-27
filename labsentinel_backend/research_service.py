@@ -9,7 +9,13 @@ from __future__ import annotations
 import logging
 import subprocess
 from typing import Any, Dict, List, Optional
-from ddgs import DDGS
+try:
+    from ddgs import DDGS
+except ImportError:
+    try:
+        from duckduckgo_search import DDGS
+    except ImportError:
+        DDGS = None
 
 logger = logging.getLogger("sentinel.research")
 
@@ -74,6 +80,8 @@ PACKAGE_DESCRIPTIONS = {
 def search_web(query: str, max_results: int = 4) -> List[Dict[str, str]]:
     """Perform real-time web search and return structured snippets."""
     results = []
+    if DDGS is None:
+        return results
     try:
         ddgs = DDGS()
         raw = list(ddgs.text(query, max_results=max_results))

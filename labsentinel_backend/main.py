@@ -23,10 +23,14 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import vault_manager
 import sentinel_service
-import lora_manager
-import ptyprocess
-import fcntl
-import termios
+try:
+    import ptyprocess
+    import fcntl
+    import termios
+except ImportError:
+    ptyprocess = None
+    fcntl = None
+    termios = None
 import struct
 import shlex
 
@@ -666,6 +670,14 @@ def post_apt_upgrade():
 @app.websocket("/api/ws/terminal")
 async def websocket_terminal(websocket: WebSocket):
     await websocket.accept()
+    if ptyprocess is None:
+        await websocket.send_text("\r\n\x1b[33m[!] Terminal interactiva PTY no disponible nativamente en Windows.\x1b[0m\r\n")
+        try:
+            while True:
+                await websocket.receive_text()
+        except Exception:
+            pass
+        return
     # Spawn bash with color terminal environment
     env = os.environ.copy()
     env["TERM"] = "xterm-256color"
@@ -1183,4 +1195,14 @@ async def switch_model(payload: SentinelModelSwitchPayload):
         print(f"Error cambiando modelo local: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-app.mount("/", StaticFiles(directory="/home/mauro/labsentinel-web/frontend/dist", html=True), name="static")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+dist_dir = os.path.join(BASE_DIR, "dist")
+if not os.path.isdir(dist_dir):
+    dist_dir = "/home/mauro/labsentinel-web/frontend/dist"
+
+if os.path.isdir(dist_dir):
+    app.mount("/", StaticFiles(directory=dist_dir, html=True), name="static")
+else:
+    @app.get("/")
+    def index_root():
+        return {"status": "SentinelOS Core Online", "port": 8001}

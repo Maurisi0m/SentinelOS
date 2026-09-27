@@ -16,6 +16,8 @@ env/
 build/
 develop-eggs/
 dist/
+!labsentinel_backend/dist/
+!labsentinel_backend/dist/**
 downloads/
 eggs/
 .eggs/
@@ -58,6 +60,8 @@ dataset/sentinel_pure_stem_cot_tripartite.jsonl
 *.tar
 *.iso
 *.log
+labsentinel_backend/vault/
+sentinel_backend.log
 *.tmp
 /tmp/
 

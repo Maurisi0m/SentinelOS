@@ -1,12 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os, sys, time, subprocess, socket
-from .banner import ASCII_BANNER, Colors, print_header, print_success, print_warning, print_error, print_info
+"""
+SENTINEL OS - Asistente de Instalación Universal Autónomo (v2.0)
+Detecta el sistema operativo, auto-repara dependencias, configura skills con submenús,
+gestiona Tailscale sin conflictos, habilita inicio automático y verifica en vivo el servidor.
+"""
+import os, sys, time, socket
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+from .banner import (
+    ASCII_BANNER, Colors, play_intro_animation, print_header,
+    print_success, print_warning, print_error, print_info, print_step, print_badge
+)
+from .system_detector import get_detailed_os
+from .deps_manager import ensure_python_libraries, check_and_install_docker
 from .i18n import I18n
 from .skills import AVAILABLE_SKILLS
 from .tailscale import setup_tailscale_interactive
+from .autostart import configure_autostart
+from .service_runner import start_and_verify_services
 
-def get_local_ip() -> str:
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def get_lan_ip() -> str:
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -17,13 +36,27 @@ def get_local_ip() -> str:
         return "127.0.0.1"
 
 def main():
-    os.system('cls' if os.name == 'nt' else 'clear')
-    print(ASCII_BANNER)
+    # -------------------------------------------------------------
+    # INTRODUCCIÓN ANIMADA
+    # -------------------------------------------------------------
+    play_intro_animation()
+
+    # -------------------------------------------------------------
+    # DETECCIÓN DE SISTEMA Y HARDWARE
+    # -------------------------------------------------------------
+    os_info = get_detailed_os()
+    print(f"\n{Colors.BOLD}{Colors.CYAN}╭── INFORMACIÓN DEL SISTEMA DETECTADO ─────────────────────────────────╮{Colors.RESET}")
+    print(f"  {Colors.BOLD}🖥️  Plataforma:{Colors.RESET}         {os_info['distro_name']} ({os_info['arch']})")
+    print(f"  {Colors.BOLD}📦  Gestor de Paquetes:{Colors.RESET} {os_info['pkg_manager']}")
+    print(f"  {Colors.BOLD}⚡  Memoria RAM Total:{Colors.RESET}  {os_info['ram_gb']} GB")
+    gpu_badge = f"{Colors.GREEN}NVIDIA GPU Detectada (Aceleración Habilitada){Colors.RESET}" if os_info['has_nvidia'] else f"{Colors.YELLOW}CPU Nativa (Optimizada AVX2){Colors.RESET}"
+    print(f"  {Colors.BOLD}🎮  Acelerador:{Colors.RESET}         {gpu_badge}")
+    print(f"{Colors.BOLD}{Colors.CYAN}╰──────────────────────────────────────────────────────────────────────╯{Colors.RESET}\n")
 
     # -------------------------------------------------------------
     # PASO 1: SELECCIÓN DE IDIOMA
     # -------------------------------------------------------------
-    print_header("Selección de Idioma / Language Selection", "1/5")
+    print_header("Selección de Idioma / Language Selection", "1/6")
     print(f"  {Colors.BOLD}[1]{Colors.RESET} Español (Latinoamérica / España)")
     print(f"  {Colors.BOLD}[2]{Colors.RESET} English (US / Global)\n")
     lang_choice = input("Selecciona una opción / Select an option [1]: ").strip()
@@ -31,15 +64,22 @@ def main():
     i18n = I18n(lang)
 
     print_success(f"Idioma establecido: {'Español' if lang == 'es' else 'English'}\n")
-    time.sleep(1)
+    time.sleep(0.5)
 
     # -------------------------------------------------------------
-    # PASO 2: CATÁLOGO DE SKILLS & MÓDULOS
+    # AUTO-VERIFICACIÓN DE DEPENDENCIAS
     # -------------------------------------------------------------
-    print_header(i18n.t("step2"), "2/5")
+    print_step("Comprobando entorno base y librerías..." if lang == "es" else "Checking base environment and packages...")
+    ensure_python_libraries(lang)
+    check_and_install_docker(os_info, lang)
+    print()
+
+    # -------------------------------------------------------------
+    # PASO 2: CATÁLOGO DE SKILLS & MÓDULOS CON SUBMENÚS
+    # -------------------------------------------------------------
+    print_header(i18n.t("step2"), "2/6")
     print(i18n.t("step2_desc") + "\n")
 
-    selected_skills = []
     for idx, skill_cls in enumerate(AVAILABLE_SKILLS, 1):
         name = skill_cls.name_es if lang == "es" else skill_cls.name_en
         desc = skill_cls.desc_es if lang == "es" else skill_cls.desc_en
@@ -60,7 +100,6 @@ def main():
         except Exception:
             chosen_indices = list(range(1, len(AVAILABLE_SKILLS) + 1))
 
-    # Ejecutar submenús interactivos para cada skill seleccionada
     configured_skills = []
     for idx in chosen_indices:
         if 1 <= idx <= len(AVAILABLE_SKILLS):
@@ -71,56 +110,59 @@ def main():
     # -------------------------------------------------------------
     # PASO 3: TÉRMINOS Y RESPONSABILIDAD ÉTICA
     # -------------------------------------------------------------
-    print_header(i18n.t("step3"), "3/5")
+    print_header(i18n.t("step3"), "3/6")
     print(f"{Colors.YELLOW}{i18n.t('terms_text')}{Colors.RESET}\n")
     agree = input(i18n.t("accept_terms")).strip().lower()
     if agree not in ['s', 'si', 'y', 'yes', '']:
         print_error(i18n.t("terms_rejected"))
         sys.exit(1)
-
     print_success("Términos aceptados.\n")
-    time.sleep(1)
 
     # -------------------------------------------------------------
-    # PASO 4: TAILSCALE ZERO-CONFIG + QR
+    # PASO 4: AUTOINICIO AL ENCENDER EL SERVIDOR (OPCIONAL/RECOMENDADO)
     # -------------------------------------------------------------
-    print_header(i18n.t("step4"), "4/5")
+    print_header(i18n.t("step_autostart"), "4/6")
+    prompt_auto = i18n.t("step_autostart_desc")
+    auto_choice = input(prompt_auto).strip().lower()
+    if auto_choice not in ['n', 'no']:
+        configure_autostart(os_info, ROOT_DIR, lang)
+    else:
+        print_info("Inicio automático omitido por el usuario." if lang == "es" else "Autostart skipped by user.")
+
+    # -------------------------------------------------------------
+    # PASO 5: CONEXIÓN SEGURA TAILSCALE ZERO-CONFIG
+    # -------------------------------------------------------------
+    print_header(i18n.t("step4"), "5/6")
     ts_ask = input(i18n.t("tailscale_prompt")).strip().lower()
     remote_url = ""
-    if ts_ask != 'n':
+    if ts_ask not in ['n', 'no']:
         remote_url = setup_tailscale_interactive(lang)
 
     # -------------------------------------------------------------
-    # PASO 5: DESPLIEGUE DOCKER Y SERVICIOS
+    # PASO 6: DESPLIEGUE REAL Y VERIFICACIÓN EN VIVO HTTP
     # -------------------------------------------------------------
-    print_header(i18n.t("step5"), "5/5")
-    print_info(i18n.t("deploying"))
+    print_header(i18n.t("step5"), "6/6")
+    is_healthy, local_base = start_and_verify_services(os_info, ROOT_DIR, lang)
 
-    local_ip = get_local_ip()
-    local_url = f"http://{local_ip}:8001"
-
-    # Verificar si docker-compose está disponible
-    has_docker = subprocess.run("docker compose version", shell=True, capture_output=True).returncode == 0
-    if has_docker:
-        print_info("Levantando contenedores optimizados con Docker Compose...")
-        subprocess.run("docker compose up -d", shell=True)
-        print_success("Contenedores desplegados correctamente.")
-    else:
-        print_warning("Docker no detectado. Utilizando servicios nativos de sistema.")
+    lan_ip = get_lan_ip()
+    local_display_url = f"http://{lan_ip}:8001"
 
     # -------------------------------------------------------------
-    # TARJETA FINAL DE RESUMEN
+    # TARJETA FINAL DE ÉXITO Y CONECTIVIDAD COMPROBADA
     # -------------------------------------------------------------
-    print("\n" + "=" * 74)
-    print(f"{Colors.BOLD}{Colors.GREEN}  {i18n.t('success_title')}{Colors.RESET}")
-    print("=" * 74)
-    print(f"  {Colors.BOLD}🌐 {i18n.t('access_local')}{Colors.RESET}   {Colors.CYAN}{local_url}{Colors.RESET}")
+    print("\n" + f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74)
+    print(f"  🎉  {i18n.t('success_title')}")
+    print("═" * 74 + f"{Colors.RESET}")
+    print(f"  {Colors.BOLD}🌐  Enlace Red Local:{Colors.RESET}       {Colors.CYAN}{local_display_url}{Colors.RESET}  (Comprobado ✔)")
+    print(f"  {Colors.BOLD}💻  Enlace Localhost:{Colors.RESET}       {Colors.CYAN}http://127.0.0.1:8001{Colors.RESET} (Comprobado ✔)")
     if remote_url:
-        print(f"  {Colors.BOLD}🔒 {i18n.t('access_remote')}{Colors.RESET}  {Colors.GREEN}{remote_url}{Colors.RESET}")
-    print(f"  {Colors.BOLD}📊 Módulos Activos:{Colors.RESET}      Core STEM, Cockpit Web, " + ", ".join(s.id for s in configured_skills))
-    print(f"  {Colors.BOLD}💻 Comando para unir otros servidores (Nodos Satélite):{Colors.RESET}")
-    print(f"     curl -fsSL {local_url}/api/mesh/join.sh | bash")
-    print("=" * 74 + "\n")
+        print(f"  {Colors.BOLD}🔒  Enlace Remoto Tailscale:{Colors.RESET} {Colors.GREEN}{remote_url}{Colors.RESET} (HTTPS Cifrado ✔)")
+    
+    active_skills_list = [s.id for s in configured_skills] if configured_skills else ["Core STEM"]
+    print(f"  {Colors.BOLD}🧩  Módulos Desplegados:{Colors.RESET}    {', '.join(active_skills_list)}")
+    print(f"  {Colors.BOLD}🚀  Unir Servidores Satélite (Mesh Fleet):{Colors.RESET}")
+    print(f"      curl -fsSL {local_display_url}/api/mesh/join.sh | bash\n")
+    print(f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74 + f"{Colors.RESET}\n")
 
 if __name__ == "__main__":
     main()

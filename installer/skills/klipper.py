@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
+import os, sys
 from ..banner import Colors, print_info, print_success
 
 class KlipperSkill:
@@ -18,9 +18,10 @@ class KlipperSkill:
     def configure_interactive(self, lang="es"):
         print(f"\n{Colors.BOLD}{Colors.CYAN}--- CONFIGURANDO SKILL: Klipper & Impresión 3D ---{Colors.RESET}")
         
-        prompt_port = "Puerto serial de la placa 3D [/dev/ttyUSB0]: " if lang == "es" else "3D board serial port [/dev/ttyUSB0]: "
+        default_port = "COM3" if sys.platform == "win32" else "/dev/ttyUSB0"
+        prompt_port = f"Puerto serial de la placa 3D [{default_port}]: " if lang == "es" else f"3D board serial port [{default_port}]: "
         val = input(prompt_port).strip()
-        if val: self.serial_port = val
+        self.serial_port = val if val else default_port
 
         prompt_baud = "Baudrate de comunicación [250000]: " if lang == "es" else "Communication baudrate [250000]: "
         val = input(prompt_baud).strip()
