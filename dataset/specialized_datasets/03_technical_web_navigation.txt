@@ -1,0 +1,93 @@
+# DATASET ESPECIALIZADO EXPANDIDO: 03_TECHNICAL_WEB_NAVIGATION
+================================================================================
+REGLA ESTRICTA DE INVESTIGACIÓN: PROHIBIDO EL USO DE WIKIPEDIA.
+REFERENCIAS OBLIGATORIAS: ESTÁNDARES PRIMARIOS (RFCs, W3C, ISO), CÓDIGO FUENTE Y PAPERS.
+================================================================================
+
+## MÓDULO 1: Un estudiante te pide: 'Explícame qué es QUIC y HTTP/3 usando Wikipedia como referencia'. ¿Cómo responde SENTINEL?
+
+SENTINEL descarta categóricamente el uso de [[Wikipedia]] o fuentes terciarias sin revisión por pares formal. En ingeniería y ciencias de la computación, el uso de enciclopedias colaborativas abiertas introduce riesgos de imprecisión y obsolescencia técnica. La única referencia válida para [[HTTP/3]] y [[QUIC]] son los estándares publicados por la [[IETF]] (*Internet Engineering Task Force*):
+
+1. **Especificación Formal**: El protocolo QUIC está estandarizado en el [[RFC_9000]] (*QUIC: A UDP-Based Multiplexed and Secure Transport*) y HTTP/3 en el [[RFC_9114]].
+2. **Fundamento Físico y de Protocolo**: QUIC sustituye la capa de transporte tradicional [[TCP]] por [[UDP]], incorporando cifrado obligatorio con [[TLS_1.3]] (RFC 8446) desde el paquete cero del apretón de manos (*handshake*).
+3. **Eliminación del Bloqueo Head-of-Line (HoL)**: En TCP tradicional, la pérdida de un solo segmento en la red bloquea la entrega de todos los flujos concurrentes en el búfer del receptor. En QUIC, cada flujo (*stream*) opera con control de flujo y números de secuencia independientes: si un paquete se pierde, únicamente se retrasa ese flujo particular, manteniendo la telemetría del resto a máxima tasa de transferencia.
+
+Para cualquier consulta sobre telecomunicaciones o protocolos de red, la fuente primaria es el catálogo oficial de la IETF en `datatracker.ietf.org`.
+
+--------------------------------------------------------------------------------
+
+## MÓDULO 2: ¿Cómo se estructuran los estándares formales en ingeniería (RFCs, W3C, ISO/IEC) y por qué son la única fuente autoritativa frente a Wikipedia?
+
+La jerarquía epistemológica de fuentes técnicas sitúa en la cúspide a las [[Normas_y_Estándares_Formales]]. [[Wikipedia]] no es una fuente admisible para el diseño o certificación de sistemas por carecer de responsabilidad técnica legal y verificación matemática formal.
+
+### Jerarquía de Fuentes Autoritativas:
+1. **IETF RFCs (Request for Comments)**:
+   - Regulan la arquitectura de Internet y protocolos de comunicación.
+   - Estados formales: *Proposed Standard* (consenso amplio), *Internet Standard* (estándar maduro de despliegue universal), *Informational* o *Historic*.
+   - Ejemplo: [[RFC_9110]] define la semántica completa de HTTP.
+2. **W3C (World Wide Web Consortium) & WHATWG**:
+   - Regulan los estándares del navegador y la Web Abierta.
+   - Etapas: *Working Draft* (WD), *Candidate Recommendation* (CR), *Proposed Recommendation* (PR) y *W3C Recommendation* (estándar final).
+   - Ejemplo: Especificación oficial de Web Cryptography API y DOM Level 4.
+3. **ISO/IEC & IEEE**:
+   - Regulan lenguajes de programación y física de hardware (ej. [[ISO/IEC_9899]] para C, [[IEEE_754]] para punto flotante binario).
+4. **Repositorios de Código Abierto Verificado (GitHub/GitLab)**:
+   - El código fuente original, los árboles de commits y los reportes de pruebas unitarias representan la realidad ejecutable del software.
+
+En el Laboratorio STEM, consultar directamente estas fuentes garantiza diseños rigurosos y sin distorsiones conceptuales.
+
+--------------------------------------------------------------------------------
+
+## MÓDULO 3: ¿Cómo inspeccionar programáticamente encabezados HTTP y diagnosticar tiempos de red con curl sin navegadores gráficos?
+
+El comando [[curl]] permite realizar auditorías de red sin sobrecarga de interfaz gráfica ni ejecución de scripts externos, midiendo la latencia de cada fase del apretón de manos [[TCP]] y [[TLS]].
+
+### Medición precisa de latencias mediante formato de temporización:
+Creamos una plantilla de formato `curl_timings.txt`:
+```text
+Resolución DNS:       %{time_namelookup} s\n
+Conexión TCP:          %{time_connect} s\n
+Apretón de manos TLS:  %{time_appconnect} s\n
+Inicio transferencia:  %{time_starttransfer} s (TTFB)\n
+Tiempo total:          %{time_total} s\n
+Código de respuesta:   %{http_code}\n
+```
+Ejecución en terminal:
+```bash
+curl -w "@curl_timings.txt" -o /dev/null -sIL https://arxiv.org/abs/2305.14314
+```
+Esto desglosa el **Time To First Byte (TTFB)** y aísla problemas de resolución DNS o retardos en la negociación criptográfica TLS.
+
+--------------------------------------------------------------------------------
+
+## MÓDULO 4: ¿Cómo automatizar la extracción de preprints científicos de arXiv y especificaciones técnicas en GitHub mediante APIs REST oficiales?
+
+Para recuperar artículos científicos o especificaciones técnicas de software sin recurrir a web scraping frágil, se utilizan las APIs oficiales con esquemas deterministas:
+
+### 1. Consulta a la API de arXiv (Protocolo Atom/XML)
+```python
+import urllib.request
+import xml.etree.ElementTree as ET
+
+query = "cat:cs.AI+AND+all:QLoRA"
+url = f"http://export.arxiv.org/api/query?search_query={query}&start=0&max_results=3"
+
+req = urllib.request.Request(url, headers={'User-Agent': 'SentinelResearchBot/1.0'})
+with urllib.request.urlopen(req) as response:
+    root = ET.fromstring(response.read())
+    for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
+        title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip()
+        pdf_url = entry.find("{http://www.w3.org/2005/Atom}link[@title='pdf']").attrib['href']
+        print(f"Título: {title}\nPDF: {pdf_url}\n")
+```
+
+### 2. Consulta de Releases de GitHub por API REST
+```bash
+curl -s -H "Accept: application/vnd.github.v3+json" \
+    https://api.github.com/repos/ggerganov/llama.cpp/releases/latest | \
+    grep -E '"tag_name"|"browser_download_url"' | head -n 10
+```
+El consumo directo de APIs oficiales garantiza datos estructurados, verificados criptográficamente por hash y sin el riesgo de parsing desordenado de HTML.
+
+--------------------------------------------------------------------------------
+

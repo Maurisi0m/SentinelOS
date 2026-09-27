@@ -1,0 +1,92 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# C extensions & dynamic libs
+*.dylib
+*.dll
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Heavy AI weights & checkpoints (>50MB, strictly avoided in git)
+models/
+export/
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.onnx
+
+# Adapters checkpoints
+training/adapters/
+training/*_adapters*/
+training/checkpoints/
+
+# Massive datasets (>50MB shards)
+dataset/terminal_corpus/*.jsonl
+!dataset/terminal_corpus/sample_validation.jsonl
+dataset/stem_mega_train.jsonl
+dataset/pure_stem_1b_structured.jsonl
+dataset/pure_stem_3b_master.jsonl
+dataset/sentinel_pure_stem_cot_tripartite.jsonl
+
+# Archives & Temporary files
+*.zip
+*.tar.gz
+*.tar
+*.iso
+*.log
+*.tmp
+/tmp/
+
+# IDE / System
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment variables & Secrets
+.env
+*.env
+!.env.example
+secrets.json
+active_model.json
+
+# Scratch & diagnostic scripts
+search_history.py
+search_user_1gb.py
+check_*.py
+diag_*.py
+fix_*.py
+patch_*.py
+test_*.py
+verify_*.py
+build_llama_server.py
+update_backend_8080.py
+restart_and_test.py

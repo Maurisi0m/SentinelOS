@@ -1,0 +1,2612 @@
+[
+  {
+    "step": 5,
+    "max_steps": 1308,
+    "progress_pct": 0.4,
+    "loss": 2.17786,
+    "lr": 1.6000000000000003e-05,
+    "epoch": 0.011,
+    "elapsed_min": 0.88,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 10,
+    "max_steps": 1308,
+    "progress_pct": 0.8,
+    "loss": 2.10663,
+    "lr": 3.6e-05,
+    "epoch": 0.023,
+    "elapsed_min": 1.58,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 15,
+    "max_steps": 1308,
+    "progress_pct": 1.1,
+    "loss": 1.75145,
+    "lr": 5.6000000000000006e-05,
+    "epoch": 0.034,
+    "elapsed_min": 2.3,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 20,
+    "max_steps": 1308,
+    "progress_pct": 1.5,
+    "loss": 1.65852,
+    "lr": 7.6e-05,
+    "epoch": 0.046,
+    "elapsed_min": 2.93,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 25,
+    "max_steps": 1308,
+    "progress_pct": 1.9,
+    "loss": 1.04677,
+    "lr": 9.6e-05,
+    "epoch": 0.057,
+    "elapsed_min": 3.63,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 30,
+    "max_steps": 1308,
+    "progress_pct": 2.3,
+    "loss": 0.76951,
+    "lr": 0.000116,
+    "epoch": 0.069,
+    "elapsed_min": 4.33,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 35,
+    "max_steps": 1308,
+    "progress_pct": 2.7,
+    "loss": 0.79999,
+    "lr": 0.00013600000000000003,
+    "epoch": 0.08,
+    "elapsed_min": 5.16,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 40,
+    "max_steps": 1308,
+    "progress_pct": 3.1,
+    "loss": 0.70602,
+    "lr": 0.00015600000000000002,
+    "epoch": 0.092,
+    "elapsed_min": 5.84,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 45,
+    "max_steps": 1308,
+    "progress_pct": 3.4,
+    "loss": 0.72734,
+    "lr": 0.00017600000000000002,
+    "epoch": 0.103,
+    "elapsed_min": 6.53,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 50,
+    "max_steps": 1308,
+    "progress_pct": 3.8,
+    "loss": 0.58826,
+    "lr": 0.000196,
+    "epoch": 0.115,
+    "elapsed_min": 7.24,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 55,
+    "max_steps": 1308,
+    "progress_pct": 4.2,
+    "loss": 0.6752,
+    "lr": 0.00019999501086978712,
+    "epoch": 0.126,
+    "elapsed_min": 7.94,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 60,
+    "max_steps": 1308,
+    "progress_pct": 4.6,
+    "loss": 0.65729,
+    "lr": 0.00019997474338150604,
+    "epoch": 0.138,
+    "elapsed_min": 8.63,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 65,
+    "max_steps": 1308,
+    "progress_pct": 5.0,
+    "loss": 0.64669,
+    "lr": 0.0001999388888719834,
+    "epoch": 0.149,
+    "elapsed_min": 9.3,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 70,
+    "max_steps": 1308,
+    "progress_pct": 5.4,
+    "loss": 0.66354,
+    "lr": 0.0001998874529312811,
+    "epoch": 0.161,
+    "elapsed_min": 9.92,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 75,
+    "max_steps": 1308,
+    "progress_pct": 5.7,
+    "loss": 0.68533,
+    "lr": 0.00019982044357875548,
+    "epoch": 0.172,
+    "elapsed_min": 10.6,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 80,
+    "max_steps": 1308,
+    "progress_pct": 6.1,
+    "loss": 0.58843,
+    "lr": 0.00019973787126180734,
+    "epoch": 0.184,
+    "elapsed_min": 11.34,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 85,
+    "max_steps": 1308,
+    "progress_pct": 6.5,
+    "loss": 0.666,
+    "lr": 0.00019963974885425266,
+    "epoch": 0.195,
+    "elapsed_min": 12.02,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 90,
+    "max_steps": 1308,
+    "progress_pct": 6.9,
+    "loss": 0.54453,
+    "lr": 0.00019952609165431578,
+    "epoch": 0.207,
+    "elapsed_min": 12.66,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 95,
+    "max_steps": 1308,
+    "progress_pct": 7.3,
+    "loss": 0.61568,
+    "lr": 0.00019939691738224418,
+    "epoch": 0.218,
+    "elapsed_min": 13.3,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 100,
+    "max_steps": 1308,
+    "progress_pct": 7.6,
+    "loss": 0.641,
+    "lr": 0.00019925224617754558,
+    "epoch": 0.23,
+    "elapsed_min": 13.99,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 105,
+    "max_steps": 1308,
+    "progress_pct": 8.0,
+    "loss": 0.48626,
+    "lr": 0.0001990921005958482,
+    "epoch": 0.241,
+    "elapsed_min": 14.61,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 110,
+    "max_steps": 1308,
+    "progress_pct": 8.4,
+    "loss": 0.5632,
+    "lr": 0.000198916505605384,
+    "epoch": 0.253,
+    "elapsed_min": 15.31,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 115,
+    "max_steps": 1308,
+    "progress_pct": 8.8,
+    "loss": 0.63453,
+    "lr": 0.00019872548858309593,
+    "epoch": 0.264,
+    "elapsed_min": 15.97,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 120,
+    "max_steps": 1308,
+    "progress_pct": 9.2,
+    "loss": 0.51403,
+    "lr": 0.00019851907931036966,
+    "epoch": 0.276,
+    "elapsed_min": 16.64,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 125,
+    "max_steps": 1308,
+    "progress_pct": 9.6,
+    "loss": 0.69697,
+    "lr": 0.0001982973099683902,
+    "epoch": 0.287,
+    "elapsed_min": 17.36,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 130,
+    "max_steps": 1308,
+    "progress_pct": 9.9,
+    "loss": 0.58054,
+    "lr": 0.0001980602151331247,
+    "epoch": 0.299,
+    "elapsed_min": 17.99,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 135,
+    "max_steps": 1308,
+    "progress_pct": 10.3,
+    "loss": 0.65519,
+    "lr": 0.00019780783176993172,
+    "epoch": 0.31,
+    "elapsed_min": 18.66,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 140,
+    "max_steps": 1308,
+    "progress_pct": 10.7,
+    "loss": 0.6244,
+    "lr": 0.00019754019922779787,
+    "epoch": 0.322,
+    "elapsed_min": 19.31,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 145,
+    "max_steps": 1308,
+    "progress_pct": 11.1,
+    "loss": 0.69001,
+    "lr": 0.00019725735923320313,
+    "epoch": 0.333,
+    "elapsed_min": 19.96,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 150,
+    "max_steps": 1308,
+    "progress_pct": 11.5,
+    "loss": 0.60828,
+    "lr": 0.000196959355883615,
+    "epoch": 0.345,
+    "elapsed_min": 20.65,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 155,
+    "max_steps": 1308,
+    "progress_pct": 11.9,
+    "loss": 0.62193,
+    "lr": 0.0001966462356406135,
+    "epoch": 0.356,
+    "elapsed_min": 21.29,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 160,
+    "max_steps": 1308,
+    "progress_pct": 12.2,
+    "loss": 0.5846,
+    "lr": 0.00019631804732264733,
+    "epoch": 0.368,
+    "elapsed_min": 22.02,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 165,
+    "max_steps": 1308,
+    "progress_pct": 12.6,
+    "loss": 0.54926,
+    "lr": 0.00019597484209742257,
+    "epoch": 0.379,
+    "elapsed_min": 22.63,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 170,
+    "max_steps": 1308,
+    "progress_pct": 13.0,
+    "loss": 0.5571,
+    "lr": 0.00019561667347392508,
+    "epoch": 0.391,
+    "elapsed_min": 23.26,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 175,
+    "max_steps": 1308,
+    "progress_pct": 13.4,
+    "loss": 0.6292,
+    "lr": 0.00019524359729407818,
+    "epoch": 0.402,
+    "elapsed_min": 23.93,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 180,
+    "max_steps": 1308,
+    "progress_pct": 13.8,
+    "loss": 0.59802,
+    "lr": 0.00019485567172403595,
+    "epoch": 0.414,
+    "elapsed_min": 24.59,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 185,
+    "max_steps": 1308,
+    "progress_pct": 14.1,
+    "loss": 0.56355,
+    "lr": 0.00019445295724511498,
+    "epoch": 0.425,
+    "elapsed_min": 25.2,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 190,
+    "max_steps": 1308,
+    "progress_pct": 14.5,
+    "loss": 0.54214,
+    "lr": 0.00019403551664436453,
+    "epoch": 0.437,
+    "elapsed_min": 25.87,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 195,
+    "max_steps": 1308,
+    "progress_pct": 14.9,
+    "loss": 0.63043,
+    "lr": 0.00019360341500477746,
+    "epoch": 0.448,
+    "elapsed_min": 26.57,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 200,
+    "max_steps": 1308,
+    "progress_pct": 15.3,
+    "loss": 0.53743,
+    "lr": 0.0001931567196951432,
+    "epoch": 0.46,
+    "elapsed_min": 27.21,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 205,
+    "max_steps": 1308,
+    "progress_pct": 15.7,
+    "loss": 0.66843,
+    "lr": 0.00019269550035954432,
+    "epoch": 0.471,
+    "elapsed_min": 27.85,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 210,
+    "max_steps": 1308,
+    "progress_pct": 16.1,
+    "loss": 0.58155,
+    "lr": 0.00019221982890649825,
+    "epoch": 0.483,
+    "elapsed_min": 28.55,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 215,
+    "max_steps": 1308,
+    "progress_pct": 16.4,
+    "loss": 0.58219,
+    "lr": 0.0001917297794977462,
+    "epoch": 0.494,
+    "elapsed_min": 29.22,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 220,
+    "max_steps": 1308,
+    "progress_pct": 16.8,
+    "loss": 0.57847,
+    "lr": 0.00019122542853669048,
+    "epoch": 0.506,
+    "elapsed_min": 29.81,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 225,
+    "max_steps": 1308,
+    "progress_pct": 17.2,
+    "loss": 0.5325,
+    "lr": 0.00019070685465648264,
+    "epoch": 0.517,
+    "elapsed_min": 30.4,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 230,
+    "max_steps": 1308,
+    "progress_pct": 17.6,
+    "loss": 0.57938,
+    "lr": 0.00019017413870776363,
+    "epoch": 0.529,
+    "elapsed_min": 31.05,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 235,
+    "max_steps": 1308,
+    "progress_pct": 18.0,
+    "loss": 0.56773,
+    "lr": 0.00018962736374605858,
+    "epoch": 0.54,
+    "elapsed_min": 31.76,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 240,
+    "max_steps": 1308,
+    "progress_pct": 18.3,
+    "loss": 0.56943,
+    "lr": 0.00018906661501882755,
+    "epoch": 0.552,
+    "elapsed_min": 32.42,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 245,
+    "max_steps": 1308,
+    "progress_pct": 18.7,
+    "loss": 0.61339,
+    "lr": 0.00018849197995217463,
+    "epoch": 0.563,
+    "elapsed_min": 33.03,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 250,
+    "max_steps": 1308,
+    "progress_pct": 19.1,
+    "loss": 0.53822,
+    "lr": 0.0001879035481372174,
+    "epoch": 0.575,
+    "elapsed_min": 33.76,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 255,
+    "max_steps": 1308,
+    "progress_pct": 19.5,
+    "loss": 0.52708,
+    "lr": 0.00018730141131611882,
+    "epoch": 0.586,
+    "elapsed_min": 34.41,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 260,
+    "max_steps": 1308,
+    "progress_pct": 19.9,
+    "loss": 0.5532,
+    "lr": 0.00018668566336778376,
+    "epoch": 0.598,
+    "elapsed_min": 35.04,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 265,
+    "max_steps": 1308,
+    "progress_pct": 20.3,
+    "loss": 0.57649,
+    "lr": 0.0001860564002932223,
+    "epoch": 0.609,
+    "elapsed_min": 35.74,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 270,
+    "max_steps": 1308,
+    "progress_pct": 20.6,
+    "loss": 0.6122,
+    "lr": 0.00018541372020058235,
+    "epoch": 0.621,
+    "elapsed_min": 36.37,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 275,
+    "max_steps": 1308,
+    "progress_pct": 21.0,
+    "loss": 0.5893,
+    "lr": 0.0001847577232898536,
+    "epoch": 0.632,
+    "elapsed_min": 37.08,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 280,
+    "max_steps": 1308,
+    "progress_pct": 21.4,
+    "loss": 0.60398,
+    "lr": 0.00018408851183724533,
+    "epoch": 0.643,
+    "elapsed_min": 37.81,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 285,
+    "max_steps": 1308,
+    "progress_pct": 21.8,
+    "loss": 0.47272,
+    "lr": 0.00018340619017924076,
+    "epoch": 0.655,
+    "elapsed_min": 38.48,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 290,
+    "max_steps": 1308,
+    "progress_pct": 22.2,
+    "loss": 0.53437,
+    "lr": 0.00018271086469632972,
+    "epoch": 0.666,
+    "elapsed_min": 39.1,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 295,
+    "max_steps": 1308,
+    "progress_pct": 22.6,
+    "loss": 0.59539,
+    "lr": 0.0001820026437964231,
+    "epoch": 0.678,
+    "elapsed_min": 39.72,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 300,
+    "max_steps": 1308,
+    "progress_pct": 22.9,
+    "loss": 0.56248,
+    "lr": 0.00018128163789795103,
+    "epoch": 0.689,
+    "elapsed_min": 40.41,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 305,
+    "max_steps": 1308,
+    "progress_pct": 23.3,
+    "loss": 0.57114,
+    "lr": 0.0001805479594126474,
+    "epoch": 0.701,
+    "elapsed_min": 41.13,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 310,
+    "max_steps": 1308,
+    "progress_pct": 23.7,
+    "loss": 0.4779,
+    "lr": 0.00017980172272802396,
+    "epoch": 0.712,
+    "elapsed_min": 41.72,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 315,
+    "max_steps": 1308,
+    "progress_pct": 24.1,
+    "loss": 0.55648,
+    "lr": 0.00017904304418953624,
+    "epoch": 0.724,
+    "elapsed_min": 42.39,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 320,
+    "max_steps": 1308,
+    "progress_pct": 24.5,
+    "loss": 0.53214,
+    "lr": 0.000178272042082444,
+    "epoch": 0.735,
+    "elapsed_min": 42.99,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 325,
+    "max_steps": 1308,
+    "progress_pct": 24.8,
+    "loss": 0.51811,
+    "lr": 0.0001774888366133696,
+    "epoch": 0.747,
+    "elapsed_min": 43.66,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 330,
+    "max_steps": 1308,
+    "progress_pct": 25.2,
+    "loss": 0.63002,
+    "lr": 0.0001766935498915565,
+    "epoch": 0.758,
+    "elapsed_min": 44.29,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 335,
+    "max_steps": 1308,
+    "progress_pct": 25.6,
+    "loss": 0.60005,
+    "lr": 0.00017588630590983142,
+    "epoch": 0.77,
+    "elapsed_min": 45.0,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 340,
+    "max_steps": 1308,
+    "progress_pct": 26.0,
+    "loss": 0.47524,
+    "lr": 0.00017506723052527242,
+    "epoch": 0.781,
+    "elapsed_min": 45.69,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 345,
+    "max_steps": 1308,
+    "progress_pct": 26.4,
+    "loss": 0.44344,
+    "lr": 0.00017423645143958692,
+    "epoch": 0.793,
+    "elapsed_min": 46.31,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 350,
+    "max_steps": 1308,
+    "progress_pct": 26.8,
+    "loss": 0.59565,
+    "lr": 0.00017339409817920137,
+    "epoch": 0.804,
+    "elapsed_min": 47.0,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 355,
+    "max_steps": 1308,
+    "progress_pct": 27.1,
+    "loss": 0.53501,
+    "lr": 0.0001725403020750672,
+    "epoch": 0.816,
+    "elapsed_min": 47.69,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 360,
+    "max_steps": 1308,
+    "progress_pct": 27.5,
+    "loss": 0.55936,
+    "lr": 0.00017167519624218484,
+    "epoch": 0.827,
+    "elapsed_min": 48.38,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 365,
+    "max_steps": 1308,
+    "progress_pct": 27.9,
+    "loss": 0.56262,
+    "lr": 0.00017079891555884995,
+    "epoch": 0.839,
+    "elapsed_min": 49.07,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 370,
+    "max_steps": 1308,
+    "progress_pct": 28.3,
+    "loss": 0.45895,
+    "lr": 0.00016991159664562447,
+    "epoch": 0.85,
+    "elapsed_min": 49.75,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 375,
+    "max_steps": 1308,
+    "progress_pct": 28.7,
+    "loss": 0.48513,
+    "lr": 0.00016901337784403636,
+    "epoch": 0.862,
+    "elapsed_min": 50.4,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 380,
+    "max_steps": 1308,
+    "progress_pct": 29.1,
+    "loss": 0.47655,
+    "lr": 0.00016810439919501052,
+    "epoch": 0.873,
+    "elapsed_min": 51.06,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 385,
+    "max_steps": 1308,
+    "progress_pct": 29.4,
+    "loss": 0.53316,
+    "lr": 0.00016718480241703545,
+    "epoch": 0.885,
+    "elapsed_min": 51.73,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 390,
+    "max_steps": 1308,
+    "progress_pct": 29.8,
+    "loss": 0.59991,
+    "lr": 0.00016625473088406758,
+    "epoch": 0.896,
+    "elapsed_min": 52.37,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 395,
+    "max_steps": 1308,
+    "progress_pct": 30.2,
+    "loss": 0.57741,
+    "lr": 0.00016531432960317828,
+    "epoch": 0.908,
+    "elapsed_min": 53.09,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 400,
+    "max_steps": 1308,
+    "progress_pct": 30.6,
+    "loss": 0.47566,
+    "lr": 0.00016436374519194558,
+    "epoch": 0.919,
+    "elapsed_min": 53.76,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 405,
+    "max_steps": 1308,
+    "progress_pct": 31.0,
+    "loss": 0.6209,
+    "lr": 0.0001634031258555952,
+    "epoch": 0.931,
+    "elapsed_min": 54.39,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 410,
+    "max_steps": 1308,
+    "progress_pct": 31.3,
+    "loss": 0.43384,
+    "lr": 0.0001624326213638939,
+    "epoch": 0.942,
+    "elapsed_min": 54.98,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 415,
+    "max_steps": 1308,
+    "progress_pct": 31.7,
+    "loss": 0.46022,
+    "lr": 0.000161452383027799,
+    "epoch": 0.954,
+    "elapsed_min": 55.61,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 420,
+    "max_steps": 1308,
+    "progress_pct": 32.1,
+    "loss": 0.46767,
+    "lr": 0.0001604625636758675,
+    "epoch": 0.965,
+    "elapsed_min": 56.19,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 425,
+    "max_steps": 1308,
+    "progress_pct": 32.5,
+    "loss": 0.53153,
+    "lr": 0.00015946331763042867,
+    "epoch": 0.977,
+    "elapsed_min": 56.89,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 430,
+    "max_steps": 1308,
+    "progress_pct": 32.9,
+    "loss": 0.4987,
+    "lr": 0.00015845480068352362,
+    "epoch": 0.988,
+    "elapsed_min": 57.58,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 435,
+    "max_steps": 1308,
+    "progress_pct": 33.3,
+    "loss": 0.57966,
+    "lr": 0.00015743717007261597,
+    "epoch": 1.0,
+    "elapsed_min": 58.29,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 440,
+    "max_steps": 1308,
+    "progress_pct": 33.6,
+    "loss": 0.5274,
+    "lr": 0.00015641058445607693,
+    "epoch": 1.009,
+    "elapsed_min": 58.86,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 445,
+    "max_steps": 1308,
+    "progress_pct": 34.0,
+    "loss": 0.44183,
+    "lr": 0.000155375203888449,
+    "epoch": 1.021,
+    "elapsed_min": 59.49,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 450,
+    "max_steps": 1308,
+    "progress_pct": 34.4,
+    "loss": 0.48763,
+    "lr": 0.00015433118979549191,
+    "epoch": 1.032,
+    "elapsed_min": 60.14,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 455,
+    "max_steps": 1308,
+    "progress_pct": 34.8,
+    "loss": 0.48629,
+    "lr": 0.00015327870494901465,
+    "epoch": 1.044,
+    "elapsed_min": 60.81,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 460,
+    "max_steps": 1308,
+    "progress_pct": 35.2,
+    "loss": 0.45741,
+    "lr": 0.0001522179134414981,
+    "epoch": 1.055,
+    "elapsed_min": 61.54,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 465,
+    "max_steps": 1308,
+    "progress_pct": 35.6,
+    "loss": 0.51317,
+    "lr": 0.00015114898066051117,
+    "epoch": 1.067,
+    "elapsed_min": 62.25,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 470,
+    "max_steps": 1308,
+    "progress_pct": 35.9,
+    "loss": 0.4564,
+    "lr": 0.0001500720732629253,
+    "epoch": 1.078,
+    "elapsed_min": 62.92,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 475,
+    "max_steps": 1308,
+    "progress_pct": 36.3,
+    "loss": 0.40223,
+    "lr": 0.00014898735914893133,
+    "epoch": 1.09,
+    "elapsed_min": 63.6,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 480,
+    "max_steps": 1308,
+    "progress_pct": 36.7,
+    "loss": 0.47788,
+    "lr": 0.00014789500743586181,
+    "epoch": 1.101,
+    "elapsed_min": 64.28,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 485,
+    "max_steps": 1308,
+    "progress_pct": 37.1,
+    "loss": 0.53054,
+    "lr": 0.00014679518843182447,
+    "epoch": 1.113,
+    "elapsed_min": 64.9,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 490,
+    "max_steps": 1308,
+    "progress_pct": 37.5,
+    "loss": 0.41717,
+    "lr": 0.00014568807360914912,
+    "epoch": 1.124,
+    "elapsed_min": 65.56,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 495,
+    "max_steps": 1308,
+    "progress_pct": 37.8,
+    "loss": 0.39461,
+    "lr": 0.00014457383557765386,
+    "epoch": 1.136,
+    "elapsed_min": 66.24,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 500,
+    "max_steps": 1308,
+    "progress_pct": 38.2,
+    "loss": 0.42115,
+    "lr": 0.0001434526480577331,
+    "epoch": 1.147,
+    "elapsed_min": 66.9,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 505,
+    "max_steps": 1308,
+    "progress_pct": 38.6,
+    "loss": 0.49212,
+    "lr": 0.00014232468585327333,
+    "epoch": 1.159,
+    "elapsed_min": 67.6,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 510,
+    "max_steps": 1308,
+    "progress_pct": 39.0,
+    "loss": 0.44293,
+    "lr": 0.0001411901248243993,
+    "epoch": 1.17,
+    "elapsed_min": 68.24,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 515,
+    "max_steps": 1308,
+    "progress_pct": 39.4,
+    "loss": 0.5429,
+    "lr": 0.00014004914186005569,
+    "epoch": 1.182,
+    "elapsed_min": 68.92,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 520,
+    "max_steps": 1308,
+    "progress_pct": 39.8,
+    "loss": 0.44036,
+    "lr": 0.00013890191485042863,
+    "epoch": 1.193,
+    "elapsed_min": 69.53,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 525,
+    "max_steps": 1308,
+    "progress_pct": 40.1,
+    "loss": 0.51178,
+    "lr": 0.00013774862265921066,
+    "epoch": 1.205,
+    "elapsed_min": 70.17,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 530,
+    "max_steps": 1308,
+    "progress_pct": 40.5,
+    "loss": 0.47455,
+    "lr": 0.0001365894450957144,
+    "epoch": 1.216,
+    "elapsed_min": 70.8,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 535,
+    "max_steps": 1308,
+    "progress_pct": 40.9,
+    "loss": 0.49532,
+    "lr": 0.00013542456288683841,
+    "epoch": 1.228,
+    "elapsed_min": 71.5,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 540,
+    "max_steps": 1308,
+    "progress_pct": 41.3,
+    "loss": 0.38963,
+    "lr": 0.00013425415764889008,
+    "epoch": 1.239,
+    "elapsed_min": 72.13,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 545,
+    "max_steps": 1308,
+    "progress_pct": 41.7,
+    "loss": 0.4806,
+    "lr": 0.0001330784118592702,
+    "epoch": 1.251,
+    "elapsed_min": 72.76,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 550,
+    "max_steps": 1308,
+    "progress_pct": 42.0,
+    "loss": 0.38444,
+    "lr": 0.00013189750882802256,
+    "epoch": 1.262,
+    "elapsed_min": 73.38,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 555,
+    "max_steps": 1308,
+    "progress_pct": 42.4,
+    "loss": 0.50606,
+    "lr": 0.00013071163266925454,
+    "epoch": 1.273,
+    "elapsed_min": 74.12,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 560,
+    "max_steps": 1308,
+    "progress_pct": 42.8,
+    "loss": 0.4552,
+    "lr": 0.0001295209682724317,
+    "epoch": 1.285,
+    "elapsed_min": 74.8,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 565,
+    "max_steps": 1308,
+    "progress_pct": 43.2,
+    "loss": 0.42163,
+    "lr": 0.00012832570127355194,
+    "epoch": 1.296,
+    "elapsed_min": 75.45,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 570,
+    "max_steps": 1308,
+    "progress_pct": 43.6,
+    "loss": 0.47886,
+    "lr": 0.00012712601802620277,
+    "epoch": 1.308,
+    "elapsed_min": 76.16,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 575,
+    "max_steps": 1308,
+    "progress_pct": 44.0,
+    "loss": 0.3724,
+    "lr": 0.00012592210557250735,
+    "epoch": 1.319,
+    "elapsed_min": 76.8,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 580,
+    "max_steps": 1308,
+    "progress_pct": 44.3,
+    "loss": 0.44758,
+    "lr": 0.00012471415161396265,
+    "epoch": 1.331,
+    "elapsed_min": 77.42,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 585,
+    "max_steps": 1308,
+    "progress_pct": 44.7,
+    "loss": 0.40225,
+    "lr": 0.00012350234448217496,
+    "epoch": 1.342,
+    "elapsed_min": 78.08,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 590,
+    "max_steps": 1308,
+    "progress_pct": 45.1,
+    "loss": 0.44657,
+    "lr": 0.00012228687310949718,
+    "epoch": 1.354,
+    "elapsed_min": 78.67,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 595,
+    "max_steps": 1308,
+    "progress_pct": 45.5,
+    "loss": 0.43888,
+    "lr": 0.00012106792699957263,
+    "epoch": 1.365,
+    "elapsed_min": 79.35,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 600,
+    "max_steps": 1308,
+    "progress_pct": 45.9,
+    "loss": 0.45892,
+    "lr": 0.00011984569619778944,
+    "epoch": 1.377,
+    "elapsed_min": 80.05,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 605,
+    "max_steps": 1308,
+    "progress_pct": 46.3,
+    "loss": 0.42058,
+    "lr": 0.00011862037126165063,
+    "epoch": 1.388,
+    "elapsed_min": 80.68,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 610,
+    "max_steps": 1308,
+    "progress_pct": 46.6,
+    "loss": 0.48132,
+    "lr": 0.00011739214323106453,
+    "epoch": 1.4,
+    "elapsed_min": 81.28,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 615,
+    "max_steps": 1308,
+    "progress_pct": 47.0,
+    "loss": 0.39007,
+    "lr": 0.00011616120359855967,
+    "epoch": 1.411,
+    "elapsed_min": 81.94,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 620,
+    "max_steps": 1308,
+    "progress_pct": 47.4,
+    "loss": 0.39374,
+    "lr": 0.00011492774427942941,
+    "epoch": 1.423,
+    "elapsed_min": 82.6,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 625,
+    "max_steps": 1308,
+    "progress_pct": 47.8,
+    "loss": 0.42328,
+    "lr": 0.00011369195758181028,
+    "epoch": 1.434,
+    "elapsed_min": 83.22,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 630,
+    "max_steps": 1308,
+    "progress_pct": 48.2,
+    "loss": 0.41714,
+    "lr": 0.00011245403617669958,
+    "epoch": 1.446,
+    "elapsed_min": 83.87,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 635,
+    "max_steps": 1308,
+    "progress_pct": 48.5,
+    "loss": 0.42908,
+    "lr": 0.00011121417306791592,
+    "epoch": 1.457,
+    "elapsed_min": 84.46,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 640,
+    "max_steps": 1308,
+    "progress_pct": 48.9,
+    "loss": 0.40068,
+    "lr": 0.00010997256156200809,
+    "epoch": 1.469,
+    "elapsed_min": 85.1,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 645,
+    "max_steps": 1308,
+    "progress_pct": 49.3,
+    "loss": 0.36877,
+    "lr": 0.00010872939523811682,
+    "epoch": 1.48,
+    "elapsed_min": 85.71,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 650,
+    "max_steps": 1308,
+    "progress_pct": 49.7,
+    "loss": 0.32724,
+    "lr": 0.00010748486791779384,
+    "epoch": 1.492,
+    "elapsed_min": 86.42,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 655,
+    "max_steps": 1308,
+    "progress_pct": 50.1,
+    "loss": 0.46314,
+    "lr": 0.0001062391736347833,
+    "epoch": 1.503,
+    "elapsed_min": 87.12,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 660,
+    "max_steps": 1308,
+    "progress_pct": 50.5,
+    "loss": 0.49166,
+    "lr": 0.00010499250660477,
+    "epoch": 1.515,
+    "elapsed_min": 87.83,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 665,
+    "max_steps": 1308,
+    "progress_pct": 50.8,
+    "loss": 0.42745,
+    "lr": 0.00010374506119509939,
+    "epoch": 1.526,
+    "elapsed_min": 88.5,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 670,
+    "max_steps": 1308,
+    "progress_pct": 51.2,
+    "loss": 0.42328,
+    "lr": 0.00010249703189447364,
+    "epoch": 1.538,
+    "elapsed_min": 89.24,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 675,
+    "max_steps": 1308,
+    "progress_pct": 51.6,
+    "loss": 0.31882,
+    "lr": 0.00010124861328262927,
+    "epoch": 1.549,
+    "elapsed_min": 89.89,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 680,
+    "max_steps": 1308,
+    "progress_pct": 52.0,
+    "loss": 0.43159,
+    "lr": 0.0001,
+    "epoch": 1.561,
+    "elapsed_min": 90.56,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 685,
+    "max_steps": 1308,
+    "progress_pct": 52.4,
+    "loss": 0.42886,
+    "lr": 9.875138671737079e-05,
+    "epoch": 1.572,
+    "elapsed_min": 91.19,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 690,
+    "max_steps": 1308,
+    "progress_pct": 52.8,
+    "loss": 0.49668,
+    "lr": 9.750296810552638e-05,
+    "epoch": 1.584,
+    "elapsed_min": 91.86,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 695,
+    "max_steps": 1308,
+    "progress_pct": 53.1,
+    "loss": 0.42382,
+    "lr": 9.625493880490066e-05,
+    "epoch": 1.595,
+    "elapsed_min": 92.55,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 700,
+    "max_steps": 1308,
+    "progress_pct": 53.5,
+    "loss": 0.44126,
+    "lr": 9.500749339523e-05,
+    "epoch": 1.607,
+    "elapsed_min": 93.15,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 705,
+    "max_steps": 1308,
+    "progress_pct": 53.9,
+    "loss": 0.35315,
+    "lr": 9.376082636521672e-05,
+    "epoch": 1.618,
+    "elapsed_min": 93.82,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 710,
+    "max_steps": 1308,
+    "progress_pct": 54.3,
+    "loss": 0.41363,
+    "lr": 9.251513208220617e-05,
+    "epoch": 1.63,
+    "elapsed_min": 94.44,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 715,
+    "max_steps": 1308,
+    "progress_pct": 54.7,
+    "loss": 0.46577,
+    "lr": 9.12706047618832e-05,
+    "epoch": 1.641,
+    "elapsed_min": 95.13,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 720,
+    "max_steps": 1308,
+    "progress_pct": 55.0,
+    "loss": 0.45587,
+    "lr": 9.002743843799194e-05,
+    "epoch": 1.653,
+    "elapsed_min": 95.77,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 725,
+    "max_steps": 1308,
+    "progress_pct": 55.4,
+    "loss": 0.4623,
+    "lr": 8.87858269320841e-05,
+    "epoch": 1.664,
+    "elapsed_min": 96.4,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 730,
+    "max_steps": 1308,
+    "progress_pct": 55.8,
+    "loss": 0.43928,
+    "lr": 8.754596382330043e-05,
+    "epoch": 1.676,
+    "elapsed_min": 97.07,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 735,
+    "max_steps": 1308,
+    "progress_pct": 56.2,
+    "loss": 0.39961,
+    "lr": 8.630804241818972e-05,
+    "epoch": 1.687,
+    "elapsed_min": 97.69,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 740,
+    "max_steps": 1308,
+    "progress_pct": 56.6,
+    "loss": 0.53104,
+    "lr": 8.507225572057063e-05,
+    "epoch": 1.699,
+    "elapsed_min": 98.39,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 745,
+    "max_steps": 1308,
+    "progress_pct": 57.0,
+    "loss": 0.36694,
+    "lr": 8.383879640144033e-05,
+    "epoch": 1.71,
+    "elapsed_min": 99.05,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 750,
+    "max_steps": 1308,
+    "progress_pct": 57.3,
+    "loss": 0.46131,
+    "lr": 8.26078567689355e-05,
+    "epoch": 1.722,
+    "elapsed_min": 99.78,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 755,
+    "max_steps": 1308,
+    "progress_pct": 57.7,
+    "loss": 0.42421,
+    "lr": 8.137962873834942e-05,
+    "epoch": 1.733,
+    "elapsed_min": 100.41,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 760,
+    "max_steps": 1308,
+    "progress_pct": 58.1,
+    "loss": 0.42389,
+    "lr": 8.015430380221058e-05,
+    "epoch": 1.745,
+    "elapsed_min": 101.08,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 765,
+    "max_steps": 1308,
+    "progress_pct": 58.5,
+    "loss": 0.4717,
+    "lr": 7.89320730004274e-05,
+    "epoch": 1.756,
+    "elapsed_min": 101.74,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 770,
+    "max_steps": 1308,
+    "progress_pct": 58.9,
+    "loss": 0.3725,
+    "lr": 7.771312689050282e-05,
+    "epoch": 1.768,
+    "elapsed_min": 102.34,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 775,
+    "max_steps": 1308,
+    "progress_pct": 59.3,
+    "loss": 0.39173,
+    "lr": 7.649765551782508e-05,
+    "epoch": 1.779,
+    "elapsed_min": 102.95,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 780,
+    "max_steps": 1308,
+    "progress_pct": 59.6,
+    "loss": 0.37019,
+    "lr": 7.528584838603739e-05,
+    "epoch": 1.791,
+    "elapsed_min": 103.66,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 785,
+    "max_steps": 1308,
+    "progress_pct": 60.0,
+    "loss": 0.39474,
+    "lr": 7.407789442749264e-05,
+    "epoch": 1.802,
+    "elapsed_min": 104.33,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 790,
+    "max_steps": 1308,
+    "progress_pct": 60.4,
+    "loss": 0.44819,
+    "lr": 7.287398197379727e-05,
+    "epoch": 1.814,
+    "elapsed_min": 105.04,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 795,
+    "max_steps": 1308,
+    "progress_pct": 60.8,
+    "loss": 0.40193,
+    "lr": 7.167429872644808e-05,
+    "epoch": 1.825,
+    "elapsed_min": 105.71,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 800,
+    "max_steps": 1308,
+    "progress_pct": 61.2,
+    "loss": 0.45203,
+    "lr": 7.047903172756831e-05,
+    "epoch": 1.837,
+    "elapsed_min": 106.4,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 805,
+    "max_steps": 1308,
+    "progress_pct": 61.5,
+    "loss": 0.49933,
+    "lr": 6.928836733074546e-05,
+    "epoch": 1.848,
+    "elapsed_min": 107.1,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 810,
+    "max_steps": 1308,
+    "progress_pct": 61.9,
+    "loss": 0.404,
+    "lr": 6.810249117197747e-05,
+    "epoch": 1.86,
+    "elapsed_min": 107.72,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 815,
+    "max_steps": 1308,
+    "progress_pct": 62.3,
+    "loss": 0.33112,
+    "lr": 6.692158814072984e-05,
+    "epoch": 1.871,
+    "elapsed_min": 108.4,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 820,
+    "max_steps": 1308,
+    "progress_pct": 62.7,
+    "loss": 0.43873,
+    "lr": 6.574584235110993e-05,
+    "epoch": 1.883,
+    "elapsed_min": 109.02,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 825,
+    "max_steps": 1308,
+    "progress_pct": 63.1,
+    "loss": 0.42166,
+    "lr": 6.457543711316164e-05,
+    "epoch": 1.894,
+    "elapsed_min": 109.61,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 830,
+    "max_steps": 1308,
+    "progress_pct": 63.5,
+    "loss": 0.4818,
+    "lr": 6.34105549042856e-05,
+    "epoch": 1.905,
+    "elapsed_min": 110.29,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 835,
+    "max_steps": 1308,
+    "progress_pct": 63.8,
+    "loss": 0.37659,
+    "lr": 6.225137734078936e-05,
+    "epoch": 1.917,
+    "elapsed_min": 110.96,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 840,
+    "max_steps": 1308,
+    "progress_pct": 64.2,
+    "loss": 0.43858,
+    "lr": 6.109808514957137e-05,
+    "epoch": 1.928,
+    "elapsed_min": 111.65,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 845,
+    "max_steps": 1308,
+    "progress_pct": 64.6,
+    "loss": 0.38405,
+    "lr": 5.995085813994433e-05,
+    "epoch": 1.94,
+    "elapsed_min": 112.36,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 850,
+    "max_steps": 1308,
+    "progress_pct": 65.0,
+    "loss": 0.29992,
+    "lr": 5.880987517560075e-05,
+    "epoch": 1.951,
+    "elapsed_min": 113.0,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 855,
+    "max_steps": 1308,
+    "progress_pct": 65.4,
+    "loss": 0.41441,
+    "lr": 5.767531414672669e-05,
+    "epoch": 1.963,
+    "elapsed_min": 113.64,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 860,
+    "max_steps": 1308,
+    "progress_pct": 65.7,
+    "loss": 0.42442,
+    "lr": 5.654735194226695e-05,
+    "epoch": 1.974,
+    "elapsed_min": 114.28,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 865,
+    "max_steps": 1308,
+    "progress_pct": 66.1,
+    "loss": 0.49609,
+    "lr": 5.542616442234618e-05,
+    "epoch": 1.986,
+    "elapsed_min": 114.95,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 870,
+    "max_steps": 1308,
+    "progress_pct": 66.5,
+    "loss": 0.49114,
+    "lr": 5.431192639085085e-05,
+    "epoch": 1.997,
+    "elapsed_min": 115.69,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 875,
+    "max_steps": 1308,
+    "progress_pct": 66.9,
+    "loss": 0.33699,
+    "lr": 5.320481156817552e-05,
+    "epoch": 2.007,
+    "elapsed_min": 116.23,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 880,
+    "max_steps": 1308,
+    "progress_pct": 67.3,
+    "loss": 0.33014,
+    "lr": 5.210499256413821e-05,
+    "epoch": 2.018,
+    "elapsed_min": 116.83,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 885,
+    "max_steps": 1308,
+    "progress_pct": 67.7,
+    "loss": 0.39363,
+    "lr": 5.101264085106875e-05,
+    "epoch": 2.03,
+    "elapsed_min": 117.48,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 890,
+    "max_steps": 1308,
+    "progress_pct": 68.0,
+    "loss": 0.33109,
+    "lr": 4.992792673707469e-05,
+    "epoch": 2.041,
+    "elapsed_min": 118.09,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 895,
+    "max_steps": 1308,
+    "progress_pct": 68.4,
+    "loss": 0.31421,
+    "lr": 4.8851019339488876e-05,
+    "epoch": 2.053,
+    "elapsed_min": 118.73,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 900,
+    "max_steps": 1308,
+    "progress_pct": 68.8,
+    "loss": 0.41103,
+    "lr": 4.778208655850191e-05,
+    "epoch": 2.064,
+    "elapsed_min": 119.33,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 905,
+    "max_steps": 1308,
+    "progress_pct": 69.2,
+    "loss": 0.43577,
+    "lr": 4.672129505098538e-05,
+    "epoch": 2.076,
+    "elapsed_min": 120.06,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 910,
+    "max_steps": 1308,
+    "progress_pct": 69.6,
+    "loss": 0.33877,
+    "lr": 4.5668810204508095e-05,
+    "epoch": 2.087,
+    "elapsed_min": 120.67,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 915,
+    "max_steps": 1308,
+    "progress_pct": 70.0,
+    "loss": 0.3749,
+    "lr": 4.4624796111550996e-05,
+    "epoch": 2.099,
+    "elapsed_min": 121.41,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 920,
+    "max_steps": 1308,
+    "progress_pct": 70.3,
+    "loss": 0.31183,
+    "lr": 4.3589415543923096e-05,
+    "epoch": 2.11,
+    "elapsed_min": 122.06,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 925,
+    "max_steps": 1308,
+    "progress_pct": 70.7,
+    "loss": 0.30916,
+    "lr": 4.256282992738403e-05,
+    "epoch": 2.122,
+    "elapsed_min": 122.73,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 930,
+    "max_steps": 1308,
+    "progress_pct": 71.1,
+    "loss": 0.30653,
+    "lr": 4.15451993164764e-05,
+    "epoch": 2.133,
+    "elapsed_min": 123.31,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 935,
+    "max_steps": 1308,
+    "progress_pct": 71.5,
+    "loss": 0.31237,
+    "lr": 4.0536682369571336e-05,
+    "epoch": 2.145,
+    "elapsed_min": 123.97,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 940,
+    "max_steps": 1308,
+    "progress_pct": 71.9,
+    "loss": 0.32611,
+    "lr": 3.9537436324132516e-05,
+    "epoch": 2.156,
+    "elapsed_min": 124.59,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 945,
+    "max_steps": 1308,
+    "progress_pct": 72.2,
+    "loss": 0.36562,
+    "lr": 3.854761697220102e-05,
+    "epoch": 2.168,
+    "elapsed_min": 125.24,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 950,
+    "max_steps": 1308,
+    "progress_pct": 72.6,
+    "loss": 0.45174,
+    "lr": 3.756737863610612e-05,
+    "epoch": 2.179,
+    "elapsed_min": 125.88,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 955,
+    "max_steps": 1308,
+    "progress_pct": 73.0,
+    "loss": 0.31512,
+    "lr": 3.659687414440486e-05,
+    "epoch": 2.191,
+    "elapsed_min": 126.54,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 960,
+    "max_steps": 1308,
+    "progress_pct": 73.4,
+    "loss": 0.34735,
+    "lr": 3.5636254808054446e-05,
+    "epoch": 2.202,
+    "elapsed_min": 127.17,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 965,
+    "max_steps": 1308,
+    "progress_pct": 73.8,
+    "loss": 0.40666,
+    "lr": 3.4685670396821726e-05,
+    "epoch": 2.214,
+    "elapsed_min": 127.89,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 970,
+    "max_steps": 1308,
+    "progress_pct": 74.2,
+    "loss": 0.37461,
+    "lr": 3.374526911593241e-05,
+    "epoch": 2.225,
+    "elapsed_min": 128.49,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 975,
+    "max_steps": 1308,
+    "progress_pct": 74.5,
+    "loss": 0.36587,
+    "lr": 3.281519758296459e-05,
+    "epoch": 2.237,
+    "elapsed_min": 129.17,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 980,
+    "max_steps": 1308,
+    "progress_pct": 74.9,
+    "loss": 0.27075,
+    "lr": 3.189560080498948e-05,
+    "epoch": 2.248,
+    "elapsed_min": 129.76,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 985,
+    "max_steps": 1308,
+    "progress_pct": 75.3,
+    "loss": 0.31972,
+    "lr": 3.0986622155963654e-05,
+    "epoch": 2.26,
+    "elapsed_min": 130.39,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 990,
+    "max_steps": 1308,
+    "progress_pct": 75.7,
+    "loss": 0.41082,
+    "lr": 3.008840335437554e-05,
+    "epoch": 2.271,
+    "elapsed_min": 131.06,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 995,
+    "max_steps": 1308,
+    "progress_pct": 76.1,
+    "loss": 0.35208,
+    "lr": 2.9201084441150074e-05,
+    "epoch": 2.283,
+    "elapsed_min": 131.68,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1000,
+    "max_steps": 1308,
+    "progress_pct": 76.5,
+    "loss": 0.36747,
+    "lr": 2.8324803757815175e-05,
+    "epoch": 2.294,
+    "elapsed_min": 132.3,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1005,
+    "max_steps": 1308,
+    "progress_pct": 76.8,
+    "loss": 0.31387,
+    "lr": 2.7459697924932815e-05,
+    "epoch": 2.306,
+    "elapsed_min": 132.93,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1010,
+    "max_steps": 1308,
+    "progress_pct": 77.2,
+    "loss": 0.37667,
+    "lr": 2.660590182079866e-05,
+    "epoch": 2.317,
+    "elapsed_min": 133.64,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1015,
+    "max_steps": 1308,
+    "progress_pct": 77.6,
+    "loss": 0.38469,
+    "lr": 2.5763548560413108e-05,
+    "epoch": 2.329,
+    "elapsed_min": 134.32,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1020,
+    "max_steps": 1308,
+    "progress_pct": 78.0,
+    "loss": 0.31306,
+    "lr": 2.493276947472757e-05,
+    "epoch": 2.34,
+    "elapsed_min": 134.95,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1025,
+    "max_steps": 1308,
+    "progress_pct": 78.4,
+    "loss": 0.42115,
+    "lr": 2.4113694090168615e-05,
+    "epoch": 2.352,
+    "elapsed_min": 135.65,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1030,
+    "max_steps": 1308,
+    "progress_pct": 78.7,
+    "loss": 0.38755,
+    "lr": 2.3306450108443512e-05,
+    "epoch": 2.363,
+    "elapsed_min": 136.3,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1035,
+    "max_steps": 1308,
+    "progress_pct": 79.1,
+    "loss": 0.44533,
+    "lr": 2.251116338663042e-05,
+    "epoch": 2.375,
+    "elapsed_min": 137.0,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1040,
+    "max_steps": 1308,
+    "progress_pct": 79.5,
+    "loss": 0.33622,
+    "lr": 2.1727957917556008e-05,
+    "epoch": 2.386,
+    "elapsed_min": 137.69,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1045,
+    "max_steps": 1308,
+    "progress_pct": 79.9,
+    "loss": 0.33442,
+    "lr": 2.0956955810463797e-05,
+    "epoch": 2.398,
+    "elapsed_min": 138.38,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1050,
+    "max_steps": 1308,
+    "progress_pct": 80.3,
+    "loss": 0.30719,
+    "lr": 2.0198277271976052e-05,
+    "epoch": 2.409,
+    "elapsed_min": 139.05,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1055,
+    "max_steps": 1308,
+    "progress_pct": 80.7,
+    "loss": 0.31439,
+    "lr": 1.9452040587352628e-05,
+    "epoch": 2.421,
+    "elapsed_min": 139.76,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1060,
+    "max_steps": 1308,
+    "progress_pct": 81.0,
+    "loss": 0.3958,
+    "lr": 1.871836210204899e-05,
+    "epoch": 2.432,
+    "elapsed_min": 140.48,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1065,
+    "max_steps": 1308,
+    "progress_pct": 81.4,
+    "loss": 0.39476,
+    "lr": 1.7997356203576886e-05,
+    "epoch": 2.444,
+    "elapsed_min": 141.12,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1070,
+    "max_steps": 1308,
+    "progress_pct": 81.8,
+    "loss": 0.259,
+    "lr": 1.728913530367029e-05,
+    "epoch": 2.455,
+    "elapsed_min": 141.87,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1075,
+    "max_steps": 1308,
+    "progress_pct": 82.2,
+    "loss": 0.41576,
+    "lr": 1.6593809820759244e-05,
+    "epoch": 2.467,
+    "elapsed_min": 142.48,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1080,
+    "max_steps": 1308,
+    "progress_pct": 82.6,
+    "loss": 0.37779,
+    "lr": 1.5911488162754683e-05,
+    "epoch": 2.478,
+    "elapsed_min": 143.09,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1085,
+    "max_steps": 1308,
+    "progress_pct": 83.0,
+    "loss": 0.31773,
+    "lr": 1.5242276710146464e-05,
+    "epoch": 2.49,
+    "elapsed_min": 143.72,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1090,
+    "max_steps": 1308,
+    "progress_pct": 83.3,
+    "loss": 0.35846,
+    "lr": 1.4586279799417668e-05,
+    "epoch": 2.501,
+    "elapsed_min": 144.35,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1095,
+    "max_steps": 1308,
+    "progress_pct": 83.7,
+    "loss": 0.31919,
+    "lr": 1.3943599706777732e-05,
+    "epoch": 2.512,
+    "elapsed_min": 144.98,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1100,
+    "max_steps": 1308,
+    "progress_pct": 84.1,
+    "loss": 0.37498,
+    "lr": 1.3314336632216262e-05,
+    "epoch": 2.524,
+    "elapsed_min": 145.71,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1105,
+    "max_steps": 1308,
+    "progress_pct": 84.5,
+    "loss": 0.33654,
+    "lr": 1.2698588683881186e-05,
+    "epoch": 2.535,
+    "elapsed_min": 146.36,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1110,
+    "max_steps": 1308,
+    "progress_pct": 84.9,
+    "loss": 0.41556,
+    "lr": 1.2096451862782598e-05,
+    "epoch": 2.547,
+    "elapsed_min": 147.02,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1115,
+    "max_steps": 1308,
+    "progress_pct": 85.2,
+    "loss": 0.43599,
+    "lr": 1.1508020047825385e-05,
+    "epoch": 2.558,
+    "elapsed_min": 147.72,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1120,
+    "max_steps": 1308,
+    "progress_pct": 85.6,
+    "loss": 0.34501,
+    "lr": 1.0933384981172479e-05,
+    "epoch": 2.57,
+    "elapsed_min": 148.39,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1125,
+    "max_steps": 1308,
+    "progress_pct": 86.0,
+    "loss": 0.35477,
+    "lr": 1.0372636253941414e-05,
+    "epoch": 2.581,
+    "elapsed_min": 149.07,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1130,
+    "max_steps": 1308,
+    "progress_pct": 86.4,
+    "loss": 0.38079,
+    "lr": 9.825861292236382e-06,
+    "epoch": 2.593,
+    "elapsed_min": 149.78,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1135,
+    "max_steps": 1308,
+    "progress_pct": 86.8,
+    "loss": 0.43359,
+    "lr": 9.293145343517374e-06,
+    "epoch": 2.604,
+    "elapsed_min": 150.48,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1140,
+    "max_steps": 1308,
+    "progress_pct": 87.2,
+    "loss": 0.3727,
+    "lr": 8.774571463309534e-06,
+    "epoch": 2.616,
+    "elapsed_min": 151.18,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1145,
+    "max_steps": 1308,
+    "progress_pct": 87.5,
+    "loss": 0.41299,
+    "lr": 8.270220502253811e-06,
+    "epoch": 2.627,
+    "elapsed_min": 151.85,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1150,
+    "max_steps": 1308,
+    "progress_pct": 87.9,
+    "loss": 0.37771,
+    "lr": 7.780171093501742e-06,
+    "epoch": 2.639,
+    "elapsed_min": 152.55,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1155,
+    "max_steps": 1308,
+    "progress_pct": 88.3,
+    "loss": 0.40369,
+    "lr": 7.3044996404556864e-06,
+    "epoch": 2.65,
+    "elapsed_min": 153.11,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1160,
+    "max_steps": 1308,
+    "progress_pct": 88.7,
+    "loss": 0.40794,
+    "lr": 6.8432803048567805e-06,
+    "epoch": 2.662,
+    "elapsed_min": 153.78,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1165,
+    "max_steps": 1308,
+    "progress_pct": 89.1,
+    "loss": 0.36603,
+    "lr": 6.396584995222554e-06,
+    "epoch": 2.673,
+    "elapsed_min": 154.48,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1170,
+    "max_steps": 1308,
+    "progress_pct": 89.4,
+    "loss": 0.33617,
+    "lr": 5.9644833556354866e-06,
+    "epoch": 2.685,
+    "elapsed_min": 155.04,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1175,
+    "max_steps": 1308,
+    "progress_pct": 89.8,
+    "loss": 0.32269,
+    "lr": 5.5470427548850455e-06,
+    "epoch": 2.696,
+    "elapsed_min": 155.69,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1180,
+    "max_steps": 1308,
+    "progress_pct": 90.2,
+    "loss": 0.35846,
+    "lr": 5.144328275964083e-06,
+    "epoch": 2.708,
+    "elapsed_min": 156.36,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1185,
+    "max_steps": 1308,
+    "progress_pct": 90.6,
+    "loss": 0.33021,
+    "lr": 4.756402705921848e-06,
+    "epoch": 2.719,
+    "elapsed_min": 157.02,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1190,
+    "max_steps": 1308,
+    "progress_pct": 91.0,
+    "loss": 0.26853,
+    "lr": 4.383326526074916e-06,
+    "epoch": 2.731,
+    "elapsed_min": 157.65,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1195,
+    "max_steps": 1308,
+    "progress_pct": 91.4,
+    "loss": 0.37118,
+    "lr": 4.025157902577448e-06,
+    "epoch": 2.742,
+    "elapsed_min": 158.33,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1200,
+    "max_steps": 1308,
+    "progress_pct": 91.7,
+    "loss": 0.49989,
+    "lr": 3.6819526773526734e-06,
+    "epoch": 2.754,
+    "elapsed_min": 158.92,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1205,
+    "max_steps": 1308,
+    "progress_pct": 92.1,
+    "loss": 0.35476,
+    "lr": 3.353764359386513e-06,
+    "epoch": 2.765,
+    "elapsed_min": 159.56,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1210,
+    "max_steps": 1308,
+    "progress_pct": 92.5,
+    "loss": 0.32938,
+    "lr": 3.0406441163850274e-06,
+    "epoch": 2.777,
+    "elapsed_min": 160.19,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1215,
+    "max_steps": 1308,
+    "progress_pct": 92.9,
+    "loss": 0.47999,
+    "lr": 2.742640766796889e-06,
+    "epoch": 2.788,
+    "elapsed_min": 160.88,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1220,
+    "max_steps": 1308,
+    "progress_pct": 93.3,
+    "loss": 0.39814,
+    "lr": 2.4598007722021253e-06,
+    "epoch": 2.8,
+    "elapsed_min": 161.53,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1225,
+    "max_steps": 1308,
+    "progress_pct": 93.7,
+    "loss": 0.36364,
+    "lr": 2.1921682300683146e-06,
+    "epoch": 2.811,
+    "elapsed_min": 162.21,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1230,
+    "max_steps": 1308,
+    "progress_pct": 94.0,
+    "loss": 0.30675,
+    "lr": 1.9397848668753272e-06,
+    "epoch": 2.823,
+    "elapsed_min": 162.91,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1235,
+    "max_steps": 1308,
+    "progress_pct": 94.4,
+    "loss": 0.34409,
+    "lr": 1.7026900316098215e-06,
+    "epoch": 2.834,
+    "elapsed_min": 163.55,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1240,
+    "max_steps": 1308,
+    "progress_pct": 94.8,
+    "loss": 0.37789,
+    "lr": 1.4809206896303495e-06,
+    "epoch": 2.846,
+    "elapsed_min": 164.18,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1245,
+    "max_steps": 1308,
+    "progress_pct": 95.2,
+    "loss": 0.32481,
+    "lr": 1.2745114169040562e-06,
+    "epoch": 2.857,
+    "elapsed_min": 164.85,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1250,
+    "max_steps": 1308,
+    "progress_pct": 95.6,
+    "loss": 0.44433,
+    "lr": 1.0834943946160137e-06,
+    "epoch": 2.869,
+    "elapsed_min": 165.53,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1255,
+    "max_steps": 1308,
+    "progress_pct": 95.9,
+    "loss": 0.44172,
+    "lr": 9.078994041518241e-07,
+    "epoch": 2.88,
+    "elapsed_min": 166.22,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1260,
+    "max_steps": 1308,
+    "progress_pct": 96.3,
+    "loss": 0.36925,
+    "lr": 7.477538224544445e-07,
+    "epoch": 2.892,
+    "elapsed_min": 166.84,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1265,
+    "max_steps": 1308,
+    "progress_pct": 96.7,
+    "loss": 0.41947,
+    "lr": 6.030826177558458e-07,
+    "epoch": 2.903,
+    "elapsed_min": 167.55,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1270,
+    "max_steps": 1308,
+    "progress_pct": 97.1,
+    "loss": 0.35259,
+    "lr": 4.739083456842153e-07,
+    "epoch": 2.915,
+    "elapsed_min": 168.24,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1275,
+    "max_steps": 1308,
+    "progress_pct": 97.5,
+    "loss": 0.33054,
+    "lr": 3.6025114574734785e-07,
+    "epoch": 2.926,
+    "elapsed_min": 168.86,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1280,
+    "max_steps": 1308,
+    "progress_pct": 97.9,
+    "loss": 0.42387,
+    "lr": 2.621287381926685e-07,
+    "epoch": 2.938,
+    "elapsed_min": 169.57,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1285,
+    "max_steps": 1308,
+    "progress_pct": 98.2,
+    "loss": 0.35395,
+    "lr": 1.7955642124450889e-07,
+    "epoch": 2.949,
+    "elapsed_min": 170.26,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1290,
+    "max_steps": 1308,
+    "progress_pct": 98.6,
+    "loss": 0.36165,
+    "lr": 1.1254706871892674e-07,
+    "epoch": 2.961,
+    "elapsed_min": 170.89,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1295,
+    "max_steps": 1308,
+    "progress_pct": 99.0,
+    "loss": 0.27983,
+    "lr": 6.1111128016611e-08,
+    "epoch": 2.972,
+    "elapsed_min": 171.52,
+    "vram_mb": 1657.6
+  },
+  {
+    "step": 1300,
+    "max_steps": 1308,
+    "progress_pct": 99.4,
+    "loss": 0.39024,
+    "lr": 2.525661849397398e-08,
+    "epoch": 2.984,
+    "elapsed_min": 172.25,
+    "vram_mb": 1657.7
+  },
+  {
+    "step": 1305,
+    "max_steps": 1308,
+    "progress_pct": 99.8,
+    "loss": 0.36543,
+    "lr": 4.989130212884607e-09,
+    "epoch": 2.995,
+    "elapsed_min": 172.93,
+    "vram_mb": 1657.6
+  }
+]

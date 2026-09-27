@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # -------------------------------------------------------------
+  # SENTINEL CORE BACKEND (FastAPI + WebSockets + Mesh Hub)
+  # -------------------------------------------------------------
+  sentinel-backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: sentinel-backend
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8001
+      - LLAMA_SERVER_API_URL=http://sentinel-engine:8080
+      - OLLAMA_API_URL=http://host.docker.internal:11434
+      - SENTINEL_ROLE=core
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - sentinel-net
+
+  # -------------------------------------------------------------
+  # SENTINEL COGNITIVE ENGINE (llama.cpp AVX2 Native Inactive/Fallback)
+  # -------------------------------------------------------------
+  sentinel-engine:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.engine
+    container_name: sentinel-engine
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - MODEL_PATH=/models/sentinel-pure-stem-1b.Q4_K_M.gguf
+      - N_THREADS=4
+      - CTX_SIZE=4096
+    volumes:
+      - ./models:/models:ro
+    networks:
+      - sentinel-net
+
+  # -------------------------------------------------------------
+  # SENTINEL FRONTEND COCKPIT (Nginx SPA + Reverse Proxy)
+  # -------------------------------------------------------------
+  sentinel-cockpit:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: sentinel-cockpit
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - sentinel-backend
+    networks:
+      - sentinel-net
+
+networks:
+  sentinel-net:
+    driver: bridge

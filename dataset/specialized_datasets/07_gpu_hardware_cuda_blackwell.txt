@@ -1,0 +1,113 @@
+# DATASET ESPECIALIZADO EXPANDIDO: 07_GPU_HARDWARE_CUDA_BLACKWELL
+================================================================================
+REGLA ESTRICTA DE INVESTIGACIÓN: PROHIBIDO EL USO DE WIKIPEDIA.
+REFERENCIAS OBLIGATORIAS: ESTÁNDARES PRIMARIOS (RFCs, W3C, ISO), CÓDIGO FUENTE Y PAPERS.
+================================================================================
+
+## MÓDULO 1: Explica la microarquitectura de las GPUs NVIDIA Blackwell (sm_120), detallando Streaming Multiprocessors, Tensor Cores y la jerarquía de memoria GDDR7.
+
+La microarquitectura [[NVIDIA_Blackwell]] (Compute Capability `sm_120` en chips de consumo y portátiles) optimiza el cómputo paralelo masivo sobre Ada Lovelace (`sm_89`) y Hopper (`sm_90`), orientada a inferencia microscópica de baja latencia.
+
+### 1. Streaming Multiprocessors (SM)
+Cada SM en la arquitectura Blackwell integra:
+- 128 núcleos [[CUDA]] para operaciones FP32 e INT32 concurrentes.
+- 4 Tensor Cores de 5ta generación con soporte nativo para tensores microscópicos [[FP4]] y [[FP8]], duplicando el rendimiento respecto a FP16 mediante factores de escala adaptativos a nivel de sub-bloque.
+- Archivo de Registros (*Register File*) que provee anchos de banda masivos a nivel de hilo.
+
+### 2. Jerarquía de Memoria
+- **Registros por Hilo**: Latencia de 1 ciclo de reloj, pero con capacidad acotada (64K registros de 32 bits por SM). Su saturación disminuye la ocupación (*occupancy*).
+- **Memoria Compartida (Shared Memory / L1 Data Cache)**: Estructura unificada configurable de baja latencia (~20 ciclos) cuando los hilos acceden sin conflictos de bancos (*bank conflicts*).
+- **Caché L2 Masiva**: Búfer global de coherencia de hasta 32 MB - 96 MB que absorbe lecturas repetitivas hacia la VRAM.
+- **VRAM [[GDDR7]]**: Utiliza modulación [[PAM3]] (Pulse Amplitude Modulation de 3 niveles) para alcanzar velocidades de 28 a 32 Gbps por pin, superando el límite de señalización NRZ de GDDR6 y logrando anchos de banda superiores a 500-1000 GB/s.
+
+### 3. Modelo de Ejecución SIMT y Warps
+La GPU ejecuta hilos en grupos atómicos de 32 llamados [[Warps]]. Todas las instrucciones son emitidas simultáneamente para los 32 hilos. Si el código introduce bifurcaciones condicionales dependientes de datos (`if/else`), se produce [[Warp_Divergence]], obligando al hardware a serializar las ramas y degradando la eficiencia computacional.
+
+--------------------------------------------------------------------------------
+
+## MÓDULO 2: ¿Por qué ocurre el fallo VIDEO_TDR_FAILURE (BSOD) en Windows con GPUs modernas y cómo se programa un kernel de CUDA sin violar el watchdog del sistema?
+
+En Windows, el subsistema [[DirectX_Graphics_Kernel]] (`dxgkrnl.sys`) implementa el mecanismo **TDR** ([[Timeout_Detection_and_Recovery]]).
+
+### Causa Raíz del Fallo BSOD (Pantallazo Azul):
+1. **Monopolio de la GPU**: Windows exige que la GPU responda al subsistema gráfico en un tiempo máximo ($TdrDelay = 2$ segundos). Si un kernel de [[CUDA]] no fragmentado bloquea la GPU durante más de 2 segundos continuos sin ceder el hardware, Windows asume que la placa de video se congeló físicamente.
+2. **Reinicio del Driver**: Windows intenta reiniciar el driver de NVIDIA (`nvlddmkm.sys`). Si el kernel no puede abortar de forma limpia porque está accediendo a memoria bloqueada, el sistema entra en pánico de kernel irrecuperable con código `VIDEO_TDR_FAILURE` (`0x00000116`) o `WHEA_UNCORRECTABLE_ERROR`.
+3. **Incompatibilidad de Arquitectura**: Si se ejecutan binarios compilados para arquitecturas previas (ej. CUDA 12.4 compilado solo hasta `sm_90`) sobre la nueva arquitectura Blackwell (`sm_120`), la capa JIT de NVIDIA falla al desensamblar el código intermedio PTX, provocando accesos ilegales a memoria a nivel de driver.
+
+### Reglas de Diseño Defensivo en CUDA C++:
+```cpp
+__global__ void safe_vector_add(const float* __restrict__ a, 
+                                const float* __restrict__ b, 
+                                float* __restrict__ c, 
+                                int n) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+    for (int i = idx; i < n; i += stride) {
+        c[i] = a[i] + b[i];
+    }
+}
+
+void execute_pipeline(float* d_a, float* d_b, float* d_c, int size) {
+    cudaStream_t stream;
+    cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking);
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+    safe_vector_add<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(d_a, d_b, d_c, size);
+    cudaStreamDestroy(stream);
+}
+```
+
+En PyTorch, la prevención se logra limitando `torch.cuda.set_per_process_memory_fraction(0.82)` para reservar VRAM para el subsistema gráfico DWM de Windows.
+
+--------------------------------------------------------------------------------
+
+## MÓDULO 3: ¿Cómo lograr accesos a memoria global coalescentes (coalesced memory access) en CUDA para maximizar el ancho de banda efectivo de la VRAM?
+
+En [[CUDA]], la memoria global (VRAM) no se accede byte a byte, sino en transacciones atómicas alineadas de **32, 64 o 128 bytes** a través de las líneas de caché L2.
+
+### Principio de Coalescencia:
+Un acceso es **completamente coalescente** cuando los 32 hilos consecutivos de un [[Warp]] solicitan direcciones de memoria contiguas que caen dentro de la misma línea de caché de 128 bytes. Esto permite al controlador de memoria despachar los datos de los 32 hilos en **una sola transacción de bus**.
+
+### Comparativa de Patrones de Memoria:
+1. **Patrón Coalescente (Óptimo - 100% de eficiencia de bus)**:
+```cpp
+// El hilo i accede al elemento i (stride = 1)
+int idx = blockDim.x * blockIdx.x + threadIdx.x;
+float val = global_data[idx];
+```
+2. **Patrón Disperso o con Stride (Inestable - hasta 96% de ancho de banda desperdiciado)**:
+```cpp
+// Acceso con salto (stride = 32)
+// Cada hilo del warp cae en una línea de caché distinta
+int idx = (blockDim.x * blockIdx.x + threadIdx.x) * 32;
+float val = global_data[idx]; // Requiere 32 transacciones separadas de 128 bytes
+```
+
+Para estructuras multidimensionales (matrices), se debe almacenar en orden mayor por filas (*Row-Major*) y hacer que `threadIdx.x` indexe la dimensión más interna contigua en memoria.
+
+--------------------------------------------------------------------------------
+
+## MÓDULO 4: ¿Cómo evitar conflictos de bancos (bank conflicts) en la Memoria Compartida (Shared Memory) de una GPU?
+
+La [[Memoria_Compartida]] (*Shared Memory*) en cada Streaming Multiprocessor está dividida en **32 bancos de memoria** independientes, cada uno con un ancho de palabra de 4 bytes (32 bits).
+
+### Regla Fundamental del Hardware:
+- Si los 32 hilos de un [[Warp]] acceden a direcciones que residen en bancos diferentes, los 32 accesos ocurren simultáneamente en **un solo ciclo de reloj**.
+- Si dos o más hilos intentan acceder a direcciones distintas dentro del **mismo banco**, se produce un [[Conflicto_de_Bancos]] (*bank conflict*), y el hardware serializa los accesos (un conflicto de 2 vías toma 2 ciclos, de 32 vías toma 32 ciclos).
+
+### Técnica de Relleno (*Padding*) para Matrices en Shared Memory:
+Al transponer una matriz de $32 \times 32$ enteros (4 bytes por elemento):
+```cpp
+// Sin padding: fila i, columna j está en el banco (j % 32)
+// Al acceder verticalmente por columnas, los 32 hilos golpean el mismo banco (conflicto de 32 vías)
+__shared__ float tile_bad[32][32];
+
+// Con padding (+1 elemento ficticio por fila):
+// Cada fila se desfasa en 1 banco, eliminando completamente los conflictos en accesos verticales
+__shared__ float tile_good[32][33];
+```
+
+Añadir una sola columna de relleno desplaza el mapeo de direcciones cíclicamente, garantizando acceso simultáneo sin serialización.
+
+--------------------------------------------------------------------------------
+

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SENTINEL // STEM Cognitive OS - Centro de Control MLOps & Benchmark</title>
+    <meta name="description" content="Dashboard de telemetría en tiempo real, benchmarking de inferencia y evaluación de SENTINEL: SLM ultra-especializado en educación STEM.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="background-glow"></div>
+    
+    <header class="top-nav">
+        <div class="brand">
+            <div class="logo-icon">
+                <span class="pulsing-dot"></span>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            </div>
+            <div>
+                <h1>SENTINEL // MLOps Lab</h1>
+                <p class="subtitle">SLM Pedagógico STEM • Llama-3.2-3B QLoRA • GGUF Q4_K_M</p>
+            </div>
+        </div>
+        <div class="system-status-badge" id="model-status-badge">
+            <span class="status-indicator ready"></span>
+            <span id="system-status-text">GPU RTX 5060 ONLINE</span>
+        </div>
+    </header>
+
+    <main class="dashboard-grid">
+        <!-- SECCIÓN 1: TELEMETRÍA DE HARDWARE EN VIVO -->
+        <section class="card telemetry-card">
+            <div class="card-header">
+                <h2>Telemetría de Hardware (Anti-BSOD Guard)</h2>
+                <span class="refresh-indicator" id="telemetry-refresh">Actualizando en vivo</span>
+            </div>
+            <div class="metrics-row">
+                <div class="metric-box">
+                    <div class="metric-label">GPU VRAM (Límite Seguro 6.5 GB)</div>
+                    <div class="metric-value" id="vram-val">-- / 8.0 GB</div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill vram-fill" id="vram-bar" style="width: 0%"></div>
+                    </div>
+                    <span class="metric-sub" id="vram-pct">0% en uso</span>
+                </div>
+
+                <div class="metric-box">
+                    <div class="metric-label">CPU (Procesador Host)</div>
+                    <div class="metric-value" id="cpu-val">-- %</div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill cpu-fill" id="cpu-bar" style="width: 0%"></div>
+                    </div>
+                    <span class="metric-sub">Uso de hilos del sistema</span>
+                </div>
+
+                <div class="metric-box">
+                    <div class="metric-label">RAM del Sistema</div>
+                    <div class="metric-value" id="ram-val">-- / 16 GB</div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill ram-fill" id="ram-bar" style="width: 0%"></div>
+                    </div>
+                    <span class="metric-sub" id="ram-pct">0% en uso</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECCIÓN 2: ARTEFACTOS Y CONFIGURACIÓN DEL MODELO -->
+        <section class="card specs-card">
+            <div class="card-header">
+                <h2>Especificaciones de SENTINEL</h2>
+                <span class="badge badge-accent">Pedagógico STEM</span>
+            </div>
+            <div class="specs-grid">
+                <div class="spec-item">
+                    <span class="spec-title">Modelo Base</span>
+                    <span class="spec-data">Llama-3.2-3B-Instruct</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-title">Arquitectura</span>
+                    <span class="spec-data">Transformer Causal (3.21B)</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-title">Entrenamiento</span>
+                    <span class="spec-data">QLoRA 4-bit (NF4, Double Quant)</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-title">Módulos Optimizados</span>
+                    <span class="spec-data">q, k, v, o, gate, up, down</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-title">Formato de Exportación</span>
+                    <span class="spec-data code-highlight">sentinel-stem.Q4_K_M.gguf</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-title">Reglas Estrictas</span>
+                    <span class="spec-data">[[Obsidian]] Tags • 0% Emojis</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECCIÓN 3: CURVA DE PÉRDIDA DE ENTRENAMIENTO -->
+        <section class="card training-card">
+            <div class="card-header">
+                <h2>Curva de Pérdida (Training Loss)</h2>
+                <span class="badge badge-info" id="loss-step-count">Paso -- / --</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="lossCanvas" width="700" height="220"></canvas>
+            </div>
+            <div class="chart-footer">
+                <div class="chart-stat">
+                    <span>Pérdida Inicial:</span>
+                    <strong id="initial-loss">--</strong>
+                </div>
+                <div class="chart-stat">
+                    <span>Pérdida Actual:</span>
+                    <strong id="current-loss" class="text-emerald">--</strong>
+                </div>
+                <div class="chart-stat">
+                    <span>Convergencia:</span>
+                    <strong id="convergence-rate" class="text-cyan">--</strong>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECCIÓN 4: BENCHMARKING DE INFERENCIA EN VIVO -->
+        <section class="card benchmark-card">
+            <div class="card-header">
+                <h2>Suite de Inferencia y Benchmarking en Tiempo Real</h2>
+                <span class="badge badge-purple">Inference Speed</span>
+            </div>
+
+            <div class="presets-row">
+                <span class="presets-label">Consultas STEM Predefinidas:</span>
+                <button class="preset-btn" id="btn-klipper">Klipper PRINT_START</button>
+                <button class="preset-btn" id="btn-esp32">ESP32 MQTT FreeRTOS</button>
+                <button class="preset-btn" id="btn-csv-data">Analítica CSV (IA + Mindset)</button>
+                <button class="preset-btn" id="btn-react-sse">React SSE Hook (Lab)</button>
+                <button class="preset-btn" id="btn-systemd">Linux Systemd Daemon</button>
+                <button class="preset-btn" id="btn-quantum">Cuantización Q4_K_M</button>
+                <button class="preset-btn preset-danger" id="btn-nonstem">Test No-STEM (Poema/Fútbol)</button>
+            </div>
+
+            <div class="input-group">
+                <textarea id="prompt-input" rows="3" placeholder="Escribe una consulta científica, de firmware o comandos para SENTINEL..."></textarea>
+                <button id="btn-run-benchmark" class="primary-action-btn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    <span>Ejecutar Benchmark</span>
+                </button>
+            </div>
+
+            <!-- Panel de Métricas de Inferencia -->
+            <div class="benchmark-results-panel" id="benchmark-results-panel" style="display: none;">
+                <div class="speed-grid">
+                    <div class="speed-box">
+                        <span class="speed-title">Velocidad de Generación</span>
+                        <span class="speed-val text-cyan" id="speed-tps">-- tok/s</span>
+                    </div>
+                    <div class="speed-box">
+                        <span class="speed-title">Latencia Total</span>
+                        <span class="speed-val text-emerald" id="speed-latency">-- s</span>
+                    </div>
+                    <div class="speed-box">
+                        <span class="speed-title">Tokens Generados</span>
+                        <span class="speed-val text-violet" id="speed-tokens">-- tokens</span>
+                    </div>
+                    <div class="speed-box">
+                        <span class="speed-title">Cumplimiento Anti-Emoji</span>
+                        <span class="speed-val text-amber" id="speed-emoji">--</span>
+                    </div>
+                </div>
+
+                <div class="obsidian-tags-container">
+                    <span class="tags-label">Enlaces de Obsidian Detectados:</span>
+                    <div class="tags-list" id="obsidian-tags-list"></div>
+                </div>
+
+                <div class="response-box">
+                    <div class="response-header">
+                        <span>Respuesta Generada por SENTINEL:</span>
+                        <button class="copy-btn" id="btn-copy-response">Copiar Texto</button>
+                    </div>
+                    <div class="response-content" id="response-content"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECCIÓN 5: DESPLIEGUE Y TRANSFERENCIA DEL ARCHIVO GGUF -->
+        <section class="card deployment-card">
+            <div class="card-header">
+                <h2>Entrega de Modelo Cuantizado (sentinel-stem.Q4_K_M.gguf)</h2>
+                <span class="badge badge-emerald">Listo para Producción</span>
+            </div>
+            <p class="deployment-desc">
+                El modelo final en formato GGUF está podado y optimizado para ejecutarse en procesadores modestos de escuelas mediante <code>llama.cpp</code>, <code>Ollama</code>, <code>LM Studio</code> o servidores educativos locales sin depender de GPU.
+            </p>
+            <div class="commands-grid">
+                <div class="command-card">
+                    <div class="command-title">Opción A: Servidor HTTP Local Ultrarrápido (LAN)</div>
+                    <p class="command-desc">Descarga directa desde cualquier laptop o Raspberry Pi en la red del aula:</p>
+                    <pre><code>python -m http.server 8080 --directory export\output_gguf</code></pre>
+                    <p class="command-sub">En la máquina del aula: <code>curl -O http://[IP_DE_ESTA_PC]:8080/sentinel-stem.Q4_K_M.gguf</code></p>
+                </div>
+
+                <div class="command-card">
+                    <div class="command-title">Opción B: Transferencia Segura por Red (SSH / SCP)</div>
+                    <p class="command-desc">Transfiere directamente al servidor Linux de la escuela:</p>
+                    <pre><code>scp .\export\output_gguf\sentinel-stem.Q4_K_M.gguf usuario@ip_servidor_escuela:/opt/models/</code></pre>
+                </div>
+
+                <div class="command-card">
+                    <div class="command-title">Opción C: Copia a Pendrive / Disco USB</div>
+                    <p class="command-desc">Ruta absoluta lista para copiar en Windows Explorer o PowerShell:</p>
+                    <pre><code>Copy-Item ".\export\output_gguf\sentinel-stem.Q4_K_M.gguf" -Destination "E:\" -Verbose</code></pre>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>SENTINEL Cognitive Lab Operating System • Proyecto Educativo Open Source • Entorno MLOps Asegurado</p>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

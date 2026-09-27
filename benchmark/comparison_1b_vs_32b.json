@@ -1,0 +1,102 @@
+[
+  {
+    "pregunta": "Explica que es un controlador PID y describe sus tres terminos P, I y D con ejemplos.",
+    "modelo_1B": {
+      "elapsed_s": 20.07,
+      "tokens": 250,
+      "tps": 12.45,
+      "finish": "length",
+      "response": "**Controlador PID: Un Algoritmo de Control de Motor**\n\nUn controlador PID (Procesador Inverso Del Phasor) es un algoritmo de control utilizado en sistemas mecánicos para regular la velocidad y el movimiento de un motor. Su objetivo es minimizar la diferencia entre la salida del motor y la salida deseada, utilizando tres componentes fundamentales: P, I y D.\n\n**Terminos P, I y D**\n\n1. **P (Proportional)**\n\nEl término P representa la proporcionalidad de la respuesta al controlador PID. Es el coefic"
+    }
+  },
+  {
+    "pregunta": "Como funciona el protocolo I2C a nivel de senales electricas? Describe SCL y SDA.",
+    "modelo_1B": {
+      "elapsed_s": 6.26,
+      "tokens": 250,
+      "tps": 39.93,
+      "finish": "length",
+      "response": "El protocolo I2C es un intercambio de señales electrónicas que utiliza senales de alta velocidad para comunicarse entre dispositivos electrónicos. Funciona en el núcleo, utilizando senales de baja velocidad para la comunicación con periféricos.\n\nEn el protocolo I2C, se utilizan dos señales principales: SCL (Serial Clock) y SDA (Serial Data). Estas señales son utilizadas para transmitir datos entre dispositivos electrónicos.\n\n**SCL (Serial Clock)**\n\nEl SCL es una señal de alta velocidad que se ut"
+    }
+  },
+  {
+    "pregunta": "Que es la complejidad temporal O(n log n) y en que algoritmos aparece? Da un ejemplo.",
+    "modelo_1B": {
+      "elapsed_s": 6.3,
+      "tokens": 250,
+      "tps": 39.67,
+      "finish": "length",
+      "response": "La complejidad temporal O(n log n) se refiere a la cantidad de tiempo que se tarda en ejecutar una operación en función del tamaño del conjunto de datos. En este caso, el algoritmo involucra la operación de orden logarítmico.\n\n**Algoritmo:** Buscar un elemento en un array binario\n\nEl algoritmo de búsqueda en un array binario es uno de los ejemplos más comunes de complejidad temporal O(n log n). A continuación, se muestra un ejemplo:\n\nSupongamos que tenemos un array binario con 1000 elementos:\n``"
+    }
+  },
+  {
+    "pregunta": "Explica la diferencia entre un proceso y un hilo en sistemas operativos Linux.",
+    "modelo_1B": {
+      "elapsed_s": 6.69,
+      "tokens": 250,
+      "tps": 37.34,
+      "finish": "length",
+      "response": "En sistemas operativos Linux, tanto los procesos como los hilos son componentes fundamentales de la ejecución de aplicaciones y el manejo de recursos del sistema. Sin embargo, existen algunas diferencias clave entre ellos:\n\n**Proceso:**\n\nUn proceso es un conjunto de instrucciones que se ejecutan en un orden específico, generalmente con una secuencia de llamadas a funciones. Los procesos son independientes entre sí y pueden tener diferentes nombres, números de pino y permisos de acceso.\n\nCada pro"
+    }
+  },
+  {
+    "pregunta": "Que es el aprendizaje por refuerzo (Reinforcement Learning) y como funciona Q-Learning?",
+    "modelo_1B": {
+      "elapsed_s": 6.27,
+      "tokens": 250,
+      "tps": 39.88,
+      "finish": "length",
+      "response": "**Aprendizaje por Refuerzo (Reinforcement Learning)**\n\nEl aprendizaje por refuerzo, también conocido como aprendizaje por recompensas o aprendizaje por refuerzo de valor, es un algoritmo de aprendizaje automático que se basa en la retroalimentación para mejorar las habilidades del agente. El objetivo es maximizar la recompensa asociada con una acción.\n\n**Funcionamiento**\n\nEl proceso funciona de la siguiente manera:\n\n1. **Observación**: Un agente interactúa con el entorno y recibe una recompensa "
+    }
+  },
+  {
+    "pregunta": "Como se configura una direccion IP estatica en Ubuntu Server via netplan?",
+    "modelo_1B": {
+      "elapsed_s": 6.5,
+      "tokens": 250,
+      "tps": 38.48,
+      "finish": "length",
+      "response": "Para configurar una dirección IP estática en Ubuntu Server utilizando `netplan`, puedes seguir estos pasos:\n\n1. **Instalación de los paquetes necesarios**: Asegúrate de tener instalados los siguientes paquetes:\n * `network-manager` para gestionar la red\n * `dhclient` para desactivar el DNS y proporcionar direcciones IP estáticas\n\n```bash\nsudo apt update\nsudo apt install network-manager dhclient\n```\n\n2. **Configuración de `netplan`**: Abre el archivo de configuración de `netplan` en `/etc/netplan"
+    }
+  },
+  {
+    "pregunta": "Explica el protocolo MQTT y por que es eficiente para dispositivos IoT.",
+    "modelo_1B": {
+      "elapsed_s": 6.51,
+      "tokens": 250,
+      "tps": 38.38,
+      "finish": "length",
+      "response": "**Protocolo MQTT: Una red de comunicación segura y eficiente para los dispositivos IoT**\n\nMQTT (Message Queuing Telemetry Transport) es un protocolo de comunicación de datos que se utiliza en la industria de los dispositivos IoT (Internet of Things). Fue desarrollado por Rob Mahony, un ingeniero de Intel, y se ha convertido en el estándar para la comunicación de datos en dispositivos IoT.\n\n**Características clave del protocolo MQTT**\n\n1. **Seguridad**: MQTT utiliza criptografía SSL/TLS para prot"
+    }
+  },
+  {
+    "pregunta": "Que es un puntero en C y cual es la diferencia entre malloc y calloc?",
+    "modelo_1B": {
+      "elapsed_s": 6.23,
+      "tokens": 250,
+      "tps": 40.11,
+      "finish": "length",
+      "response": "**Puntero en C**\n\nEn C, un puntero es una variable que almacena el dirección de memoria de otra variable. Un puntero se define utilizando la palabra reservada `puntar` (en inglés, `point`) y se utiliza para acceder a los elementos de una estructura o array.\n\n**Diferencia entre malloc y calloc**\n\nMientras que `malloc` devuelve un puntero al espacio de memoria donde se alojará el nuevo elemento, `calloc` devuelve dos punteros: uno para la dirección del nuevo elemento y otro para la cantidad de ele"
+    }
+  },
+  {
+    "pregunta": "Describe el funcionamiento de una red neuronal convolucional (CNN) paso a paso.",
+    "modelo_1B": {
+      "elapsed_s": 5.98,
+      "tokens": 250,
+      "tps": 41.79,
+      "finish": "length",
+      "response": "**Funcionamiento de una Red Neuronal Convolucional (CNN)**\n\nUna Red Neuronal Convolucional (CNN) es un modelo de aprendizaje automático diseñado para procesar y analizar imágenes de alta resolución. A continuación, se describen los pasos clave en el funcionamiento de una CNN:\n\n**Paso 1: Preprocesamiento de la imagen**\n\nLa imagen se convierte en un vector de características utilizando técnicas como la despejadora de grises (grayscale) y la despejadora de colores (color). Esto permite que la red p"
+    }
+  },
+  {
+    "pregunta": "Que es el protocolo TCP y como garantiza la entrega ordenada de paquetes?",
+    "modelo_1B": {
+      "elapsed_s": 5.93,
+      "tokens": 250,
+      "tps": 42.12,
+      "finish": "length",
+      "response": "El protocolo TCP (Transmission Control Protocol) es un componente fundamental del modelo OSI (Open Systems Interconnection), diseñado para garantizar la entrega ordenada de paquetes en redes de computadoras. A continuación, se describen los conceptos clave y cómo funciona el protocolo TCP:\n\n**Objetivo principal:** El objetivo principal del protocolo TCP es asegurar que los paquetes lleguen a su destino de manera segura y ordenada.\n\n**Componentes clave:**\n\n1. **Seguridad (Authentication):** El pr"
+    }
+  }
+]
