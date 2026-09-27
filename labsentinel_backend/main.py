@@ -1,6 +1,8 @@
 import asyncio
 import json
 import os
+import sys
+import socket
 import re
 import psutil
 import shutil
@@ -81,22 +83,71 @@ def post_json(url: str, body: dict) -> dict:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def get_load_avg() -> list[float]:
+    try:
+        return [round(x, 2) for x in os.getloadavg()]
+    except (AttributeError, OSError):
+        cpu_p = psutil.cpu_percent(interval=None)
+        cores = os.cpu_count() or 1
+        load = round((cpu_p / 100.0) * cores, 2)
+        return [load, load, load]
+
+def get_mem_stats() -> dict:
+    try:
+        if os.path.exists("/proc/meminfo"):
+            with open("/proc/meminfo", encoding="utf-8") as file:
+                mem = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in file}
+            total_mem = mem.get("MemTotal", 0)
+            avail_mem = mem.get("MemAvailable", 0)
+            used_mem = total_mem - avail_mem
+            return {
+                "total": total_mem,
+                "used": used_mem,
+                "available": avail_mem,
+                "cached": mem.get("Cached", 0),
+                "free": mem.get("MemFree", 0),
+                "swap_total": mem.get("SwapTotal", 0),
+                "swap_free": mem.get("SwapFree", 0),
+            }
+        else:
+            vm = psutil.virtual_memory()
+            sm = psutil.swap_memory()
+            return {
+                "total": vm.total,
+                "used": vm.used,
+                "available": vm.available,
+                "cached": getattr(vm, "cached", 0),
+                "free": vm.free,
+                "swap_total": sm.total,
+                "swap_free": sm.free,
+            }
+    except Exception:
+        return {"total": 0, "used": 0, "available": 0, "free": 0}
+
 class CpuMeter:
     def __init__(self):
         self.previous = self.read()
     @staticmethod
     def read() -> tuple[int, int]:
         try:
-            with open("/proc/stat", encoding="utf-8") as file:
-                values = [int(item) for item in file.readline().split()[1:]]
-            return sum(values), values[3] + values[4]
+            if os.path.exists("/proc/stat"):
+                with open("/proc/stat", encoding="utf-8") as file:
+                    values = [int(item) for item in file.readline().split()[1:]]
+                return sum(values), values[3] + values[4]
         except Exception:
-            return 0, 0
+            pass
+        return 0, 0
     def percent(self) -> float:
-        current = self.read()
-        total, idle = current[0] - self.previous[0], current[1] - self.previous[1]
-        self.previous = current
-        return 0 if not total else 100 * (total - idle) / total
+        try:
+            if os.path.exists("/proc/stat"):
+                current = self.read()
+                total, idle = current[0] - self.previous[0], current[1] - self.previous[1]
+                self.previous = current
+                return 0 if not total else 100 * (total - idle) / total
+            else:
+                return float(psutil.cpu_percent(interval=None))
+        except Exception:
+            return 0.0
 
 cpu_meter = CpuMeter()
 
@@ -108,13 +159,18 @@ class NetworkMeter:
     def read() -> tuple[int, int]:
         rx = tx = 0
         try:
-            with open("/proc/net/dev", "r") as f:
-                lines = f.readlines()[2:]
-                for line in lines:
-                    parts = line.split()
-                    if parts[0].startswith(("eth", "en", "wl", "wlan")):
-                        rx += int(parts[1])
-                        tx += int(parts[9])
+            if os.path.exists("/proc/net/dev"):
+                with open("/proc/net/dev", "r") as f:
+                    lines = f.readlines()[2:]
+                    for line in lines:
+                        parts = line.split()
+                        if parts[0].startswith(("eth", "en", "wl", "wlan")):
+                            rx += int(parts[1])
+                            tx += int(parts[9])
+            else:
+                counters = psutil.net_io_counters()
+                rx = counters.bytes_recv
+                tx = counters.bytes_sent
         except Exception:
             pass
         return rx, tx
@@ -138,12 +194,18 @@ class DiskMeter:
     def read() -> tuple[int, int]:
         r = w = 0
         try:
-            with open("/proc/diskstats", "r") as f:
-                for line in f:
-                    parts = line.split()
-                    if len(parts) >= 13 and parts[2].startswith(("sd", "nvme", "vd", "mmc")):
-                        r += int(parts[5]) * 512
-                        w += int(parts[9]) * 512
+            if os.path.exists("/proc/diskstats"):
+                with open("/proc/diskstats", "r") as f:
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) >= 13 and parts[2].startswith(("sd", "nvme", "vd", "mmc")):
+                            r += int(parts[5]) * 512
+                            w += int(parts[9]) * 512
+            else:
+                d_io = psutil.disk_io_counters()
+                if d_io:
+                    r = d_io.read_bytes
+                    w = d_io.write_bytes
         except Exception:
             pass
         return r, w
@@ -161,6 +223,13 @@ disk_meter = DiskMeter()
 
 def get_cpu_temp():
     try:
+        if hasattr(psutil, "sensors_temperatures"):
+            temps = psutil.sensors_temperatures()
+            if temps:
+                for name, entries in temps.items():
+                    for entry in entries:
+                        if getattr(entry, 'current', None) and entry.current > 0:
+                            return float(entry.current)
         for root, dirs, files in os.walk("/sys/class/thermal"):
             for dir_name in dirs:
                 if dir_name.startswith("thermal_zone"):
@@ -255,12 +324,18 @@ async def metric_collector():
             disk_s = disk_meter.get_speed()
             
             try:
-                with open("/proc/meminfo", encoding="utf-8") as file:
-                    mem = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in file}
-                used_mem = mem.get("MemTotal", 0) - mem.get("MemAvailable", 0)
-                mem_p = (used_mem / mem.get("MemTotal", 1)) * 100
+                if os.path.exists("/proc/meminfo"):
+                    with open("/proc/meminfo", encoding="utf-8") as file:
+                        mem = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in file}
+                    used_mem = mem.get("MemTotal", 0) - mem.get("MemAvailable", 0)
+                    mem_p = (used_mem / mem.get("MemTotal", 1)) * 100
+                else:
+                    mem_p = psutil.virtual_memory().percent
             except Exception:
-                mem_p = 0
+                try:
+                    mem_p = psutil.virtual_memory().percent
+                except Exception:
+                    mem_p = 0
             
             # Klipper temps
             klipper = get_json(MOONRAKER_URL + "/printer/objects/query", {"objects": {"extruder": ["temperature", "target"], "heater_bed": ["temperature", "target"]}}).get("result", {}).get("status", {})
@@ -301,22 +376,9 @@ def collect_data() -> dict:
     if _CACHED_SYSTEM_DATA is not None and (ai_busy or (now - _LAST_FULL_SCAN_TIME < 12.0)):
         fast_data = dict(_CACHED_SYSTEM_DATA)
         try:
-            with open("/proc/meminfo", encoding="utf-8") as file:
-                mem = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in file}
-            total_mem = mem.get("MemTotal", 0)
-            avail_mem = mem.get("MemAvailable", 0)
-            used_mem = total_mem - avail_mem
             fast_data["system"] = dict(fast_data.get("system", {}))
-            fast_data["system"]["memory"] = {
-                "total": total_mem,
-                "used": used_mem,
-                "available": avail_mem,
-                "cached": mem.get("Cached", 0),
-                "free": mem.get("MemFree", 0),
-                "swap_total": mem.get("SwapTotal", 0),
-                "swap_free": mem.get("SwapFree", 0),
-            }
-            fast_data["system"]["loadavg"] = os.getloadavg()
+            fast_data["system"]["memory"] = get_mem_stats()
+            fast_data["system"]["loadavg"] = get_load_avg()
         except Exception:
             pass
         fast_data["metrics_history"] = list(history_buffer)
@@ -351,74 +413,109 @@ def collect_data() -> dict:
     except json.JSONDecodeError:
         tailscale = {}
         
-    try:
-        with open("/proc/meminfo", encoding="utf-8") as file:
-            mem = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in file}
-        total_mem = mem.get("MemTotal", 0)
-        avail_mem = mem.get("MemAvailable", 0)
-        used_mem = total_mem - avail_mem
-        mem_stats = {
-            "total": total_mem,
-            "used": used_mem,
-            "available": avail_mem,
-            "cached": mem.get("Cached", 0),
-            "free": mem.get("MemFree", 0),
-            "swap_total": mem.get("SwapTotal", 0),
-            "swap_free": mem.get("SwapFree", 0),
-        }
-    except Exception:
-        mem_stats = {"total": 0, "used": 0}
+    mem_stats = get_mem_stats()
         
     disks = []
     try:
-        for line in command("df", "-B1").splitlines()[1:]:
-            fields = line.split()
-            if len(fields) >= 6 and fields[0].startswith("/dev/") and not fields[0].startswith("/dev/loop"):
-                disks.append({
-                    "device": fields[0],
-                    "total": int(fields[1]),
-                    "used": int(fields[2]),
-                    "free": int(fields[3]),
-                    "mountpoint": fields[5]
-                })
+        if sys.platform != "win32" and shutil.which("df"):
+            for line in command("df", "-B1").splitlines()[1:]:
+                fields = line.split()
+                if len(fields) >= 6 and fields[0].startswith("/dev/") and not fields[0].startswith("/dev/loop"):
+                    disks.append({
+                        "device": fields[0],
+                        "total": int(fields[1]),
+                        "used": int(fields[2]),
+                        "free": int(fields[3]),
+                        "mountpoint": fields[5]
+                    })
+        if not disks:
+            for p in psutil.disk_partitions(all=False):
+                if 'cdrom' in p.opts or not p.fstype:
+                    continue
+                try:
+                    usage = psutil.disk_usage(p.mountpoint)
+                    disks.append({
+                        "device": p.device,
+                        "total": usage.total,
+                        "used": usage.used,
+                        "free": usage.free,
+                        "mountpoint": p.mountpoint
+                    })
+                except Exception:
+                    pass
     except Exception:
         pass
-    uptime = float(open("/proc/uptime").read().split()[0]) if os.path.exists("/proc/uptime") else 0
+
+    uptime = 0.0
+    try:
+        if os.path.exists("/proc/uptime"):
+            uptime = float(open("/proc/uptime").read().split()[0])
+        else:
+            uptime = round(time.time() - psutil.boot_time(), 1)
+    except Exception:
+        uptime = 0.0
     
     # Active Users
     active_users = []
     try:
-        for line in command("who").splitlines():
-            parts = line.split()
-            if len(parts) >= 3:
+        if sys.platform != "win32" and shutil.which("who"):
+            for line in command("who").splitlines():
+                parts = line.split()
+                if len(parts) >= 3:
+                    active_users.append({
+                        "user": parts[0],
+                        "terminal": parts[1],
+                        "login_time": " ".join(parts[2:4]),
+                        "ip": parts[4].strip("()") if len(parts) > 4 else "localhost"
+                    })
+        if not active_users:
+            for u in psutil.users():
                 active_users.append({
-                    "user": parts[0],
-                    "terminal": parts[1],
-                    "login_time": " ".join(parts[2:4]),
-                    "ip": parts[4].strip("()") if len(parts) > 4 else "localhost"
+                    "user": u.name,
+                    "terminal": u.terminal or "console",
+                    "login_time": datetime.fromtimestamp(u.started).strftime("%Y-%m-%d %H:%M"),
+                    "ip": u.host or "localhost"
                 })
     except: pass
 
     # Open Ports
     open_ports = []
     try:
-        for line in command("ss", "-tuln").splitlines()[1:]:
-            parts = line.split()
-            if len(parts) >= 5:
-                open_ports.append({
-                    "protocol": parts[0],
-                    "state": parts[1],
-                    "local_address": parts[4]
-                })
+        if sys.platform != "win32" and shutil.which("ss"):
+            for line in command("ss", "-tuln").splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 5:
+                    open_ports.append({
+                        "protocol": parts[0],
+                        "state": parts[1],
+                        "local_address": parts[4]
+                    })
+        if not open_ports:
+            for conn in psutil.net_connections(kind='inet'):
+                if conn.status == 'LISTEN':
+                    proto = "tcp" if conn.type == socket.SOCK_STREAM else "udp"
+                    ip = conn.laddr.ip if conn.laddr else ""
+                    port = conn.laddr.port if conn.laddr else ""
+                    open_ports.append({
+                        "protocol": proto,
+                        "state": conn.status,
+                        "local_address": f"{ip}:{port}"
+                    })
+                    if len(open_ports) >= 30:
+                        break
     except: pass
 
     # CPU Frequencies
     cpu_freqs = []
     try:
-        with open("/proc/cpuinfo", "r") as f:
-            for line in f:
-                if line.startswith("cpu MHz"):
-                    cpu_freqs.append(float(line.split(":")[1].strip()))
+        freq = psutil.cpu_freq()
+        if freq and getattr(freq, 'current', None):
+            cpu_freqs.append(round(freq.current, 1))
+        elif os.path.exists("/proc/cpuinfo"):
+            with open("/proc/cpuinfo", "r") as f:
+                for line in f:
+                    if line.startswith("cpu MHz"):
+                        cpu_freqs.append(float(line.split(":")[1].strip()))
     except: pass
 
     # SMART Disks
@@ -458,18 +555,34 @@ def collect_data() -> dict:
         for line in out.splitlines():
             if line and not line.startswith("#"):
                 cron_jobs.append({"user": "mauro", "job": line})
-        with open("/etc/crontab") as f:
-            for line in f:
-                if line and not line.startswith("#") and len(line.split()) > 5:
-                    cron_jobs.append({"user": "system", "job": line.strip()})
+        if os.path.exists("/etc/crontab"):
+            with open("/etc/crontab") as f:
+                for line in f:
+                    if line and not line.startswith("#") and len(line.split()) > 5:
+                        cron_jobs.append({"user": "system", "job": line.strip()})
     except: pass
     
     processes = []
-    # Added number of threads (nlwp)
-    for line in command("ps", "-eo", "pid=,user=,%cpu=,%mem=,nlwp=,comm=", "--sort=-%cpu").splitlines()[:50]:
-        fields = line.split(None, 5)
-        if len(fields) == 6:
-            processes.append({"pid": fields[0], "user": fields[1], "cpu": fields[2], "mem": fields[3], "threads": fields[4], "name": fields[5]})
+    try:
+        if sys.platform != "win32" and shutil.which("ps"):
+            for line in command("ps", "-eo", "pid=,user=,%cpu=,%mem=,nlwp=,comm=", "--sort=-%cpu").splitlines()[:50]:
+                fields = line.split(None, 5)
+                if len(fields) == 6:
+                    processes.append({"pid": fields[0], "user": fields[1], "cpu": fields[2], "mem": fields[3], "threads": fields[4], "name": fields[5]})
+        if not processes:
+            for proc in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent', 'memory_percent', 'num_threads']):
+                info = proc.info
+                processes.append({
+                    "pid": str(info.get('pid', '')),
+                    "user": str(info.get('username') or 'system'),
+                    "cpu": f"{info.get('cpu_percent') or 0:.1f}",
+                    "mem": f"{info.get('memory_percent') or 0:.1f}",
+                    "threads": str(info.get('num_threads') or 1),
+                    "name": str(info.get('name') or 'process')
+                })
+                if len(processes) >= 50:
+                    break
+    except: pass
 
     n_list = list(NOTIFICATIONS_QUEUE)
     NOTIFICATIONS_QUEUE.clear()
@@ -487,7 +600,7 @@ def collect_data() -> dict:
             "memory": mem_stats,
             "disks": disks,
             "uptime": uptime,
-            "loadavg": os.getloadavg(),
+            "loadavg": get_load_avg(),
             "cpu_cores": os.cpu_count(),
             "cpu_freqs": cpu_freqs,
             "processes": processes,
