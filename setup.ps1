@@ -57,44 +57,76 @@ Write-Host "[OK] Interprete Python detectado: $pythonCmd" -ForegroundColor Green
 $venvDir = Join-Path $projectRoot ".venv"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 
-if (-not (Test-Path $venvPython)) {
+$needsCreate = $true
+if (Test-Path $venvPython) {
+    $testPy = & "$venvPython" -c "import sys; print(1)" 2>$null
+    if ($testPy -eq "1") {
+        $needsCreate = $false
+    }
+}
+
+if ($needsCreate) {
     Write-Host "[*] Auto-reparacion: Creando entorno virtual aislado (.venv)..." -ForegroundColor Cyan
     Write-Host "    (Garantiza instalacion de librerias sin requerir permisos de Administrador)" -ForegroundColor Gray
     
-    # Intentar creacion de venv nativo
+    # Intento 1: venv estandar
     if ($pythonCmd -eq "py -3") {
         & py -3 -m venv "$venvDir" 2>$null
     } else {
         & python -m venv "$venvDir" 2>$null
     }
     
-    # Fallback si venv nativo no genero Scripts\python.exe
+    # Intento 2: Fallback si ensurepip esta roto/desactivado en Windows 11 (usar --without-pip)
     if (-not (Test-Path $venvPython)) {
-        Write-Host "[!] venv nativo no disponible. Reparando con modulo virtualenv..." -ForegroundColor Yellow
-        & $pythonCmd -m pip install --user virtualenv --quiet --prefer-binary
-        & $pythonCmd -m virtualenv "$venvDir"
+        Write-Host "[*] Auto-reparacion: Inicializando entorno seguro con --without-pip..." -ForegroundColor Cyan
+        if ($pythonCmd -eq "py -3") {
+            & py -3 -m venv --without-pip "$venvDir" 2>$null
+        } else {
+            & python -m venv --without-pip "$venvDir" 2>$null
+        }
     }
 }
 
 # 4. Asegurar pip funcional dentro del venv
+$localGetPip = Join-Path $projectRoot "installer\get-pip.py"
+
 if (Test-Path $venvPython) {
     Write-Host "[OK] Entorno virtual activo: $venvDir" -ForegroundColor Green
     
     $pipCheck = & "$venvPython" -m pip --version 2>$null
     if (-not $pipCheck) {
-        Write-Host "[*] Auto-reparacion: Inicializando gestor pip interno con ensurepip..." -ForegroundColor Cyan
-        & "$venvPython" -m ensurepip --upgrade 2>$null
+        Write-Host "[*] Auto-reparacion: Desplegando gestor pip autonomamente dentro del entorno virtual..." -ForegroundColor Cyan
+        if (Test-Path $localGetPip) {
+            & "$venvPython" "$localGetPip" --no-warn-script-location --no-setuptools --no-wheel
+        } else {
+            & "$venvPython" -m ensurepip --upgrade 2>$null
+        }
+        $pipCheck = & "$venvPython" -m pip --version 2>$null
     }
     
-    # Actualizar herramientas de empaquetado esenciales
-    Write-Host "[*] Verificando herramientas de construccion (pip, wheel, setuptools)..." -ForegroundColor Cyan
-    & "$venvPython" -m pip install --upgrade pip setuptools wheel --quiet --prefer-binary
+    if (-not $pipCheck) {
+        Write-Host "[*] Auto-reparacion: Descargando bootstrap oficial de pip..." -ForegroundColor Cyan
+        $tempPip = Join-Path $env:TEMP "sentinel_get_pip.py"
+        curl.exe -sSL https://bootstrap.pypa.io/get-pip.py -o "$tempPip" 2>$null
+        if (Test-Path $tempPip) {
+            & "$venvPython" "$tempPip" --no-warn-script-location --no-setuptools --no-wheel
+        }
+    }
+    
+    # Pre-instalar dependencias criticas con ruedas pre-compiladas (--only-binary=:all: para omitir compilador C++)
+    Write-Host "[*] Auto-reparacion: Asegurando paquetes criticos (fastapi, uvicorn, psutil, pydantic)..." -ForegroundColor Cyan
+    & "$venvPython" -m pip install --prefer-binary --only-binary=:all: --trusted-host pypi.org --trusted-host files.pythonhosted.org fastapi uvicorn aiohttp requests psutil pydantic --quiet
     
     # 5. Ejecutar instalador de SentinelOS dentro del entorno virtual seguro
     $env:PYTHONPATH = $projectRoot
     & "$venvPython" -m installer
 } else {
     Write-Host "[!] Aviso: No se pudo aislar en .venv. Continuando con Python del sistema..." -ForegroundColor Yellow
+    $sysPipCheck = & $pythonCmd -m pip --version 2>$null
+    if (-not $sysPipCheck -and (Test-Path $localGetPip)) {
+        Write-Host "[*] Auto-reparacion: Instalando pip en espacio de usuario..." -ForegroundColor Cyan
+        & $pythonCmd "$localGetPip" --user --no-warn-script-location 2>$null
+    }
     $env:PYTHONPATH = $projectRoot
     & $pythonCmd -m installer
 }

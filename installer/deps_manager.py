@@ -75,6 +75,105 @@ def check_frontend_assets(root_dir: str, lang="es") -> bool:
     print_info("La interfaz gráfica puede ejecutarse con los archivos estáticos empaquetados en el repositorio." if lang == "es" else "The UI can run with static assets packaged in the repository.")
     return False
 
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def bootstrap_pip(target_python: str = None, lang="es") -> bool:
+    """Auto-reparación y bootstrap autónomo de pip si está ausente en el entorno Python."""
+    if not target_python:
+        target_python = sys.executable
+
+    # Verificar si pip ya está funcional
+    try:
+        chk = subprocess.run([target_python, "-m", "pip", "--version"], capture_output=True, text=True, timeout=10)
+        if chk.returncode == 0:
+            return True
+    except Exception:
+        pass
+
+    msg_start = "Auto-reparación: Módulo pip no detectado en el entorno. Iniciando instalación y recuperación autónoma de pip..." if lang == "es" else "Self-healing: pip module not detected. Initiating autonomous pip recovery..."
+    print_warning(msg_start)
+
+    local_get_pip = os.path.join(ROOT_DIR, "installer", "get-pip.py")
+
+    # Método 1: Local get-pip.py (el más confiable y rápido, empaquetado en el repositorio)
+    if os.path.exists(local_get_pip):
+        print_step("Auto-reparación: Desplegando gestor pip desde bootstrap local empaquetado..." if lang == "es" else "Self-healing: Deploying pip from local bundled bootstrap...")
+        try:
+            res = subprocess.run([target_python, local_get_pip, "--no-warn-script-location", "--no-setuptools", "--no-wheel"], capture_output=True, text=True, timeout=120)
+            chk = subprocess.run([target_python, "-m", "pip", "--version"], capture_output=True, text=True, timeout=10)
+            if chk.returncode == 0:
+                print_success("Auto-reparación: Pip instalado y verificado exitosamente." if lang == "es" else "Self-healing: Pip installed and verified successfully.")
+                return True
+        except Exception as e:
+            print_warning(f"Aviso en bootstrap local de pip: {e}")
+
+    # Método 2: ensurepip de la biblioteca estándar
+    try:
+        print_step("Auto-reparación: Intentando inicialización mediante ensurepip..." if lang == "es" else "Self-healing: Attempting ensurepip initialization...")
+        subprocess.run([target_python, "-m", "ensurepip", "--upgrade", "--default-pip"], capture_output=True, text=True, timeout=60)
+        chk = subprocess.run([target_python, "-m", "pip", "--version"], capture_output=True, text=True, timeout=10)
+        if chk.returncode == 0:
+            print_success("Auto-reparación: Pip inicializado mediante ensurepip." if lang == "es" else "Self-healing: Pip initialized via ensurepip.")
+            return True
+    except Exception:
+        pass
+
+    # Método 3: Descarga dinámica de get-pip.py vía urllib o curl
+    import tempfile
+    temp_pip = os.path.join(tempfile.gettempdir(), "sentinel_get_pip.py")
+    urls = [
+        "https://bootstrap.pypa.io/get-pip.py",
+        "https://raw.githubusercontent.com/pypa/get-pip/main/public/get-pip.py"
+    ]
+    downloaded = False
+    for url in urls:
+        try:
+            print_step(f"Auto-reparación: Descargando get-pip.py desde {url}..." if lang == "es" else f"Self-healing: Downloading get-pip.py from {url}...")
+            import urllib.request, ssl
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers={"User-Agent": "SentinelOS-Installer"})
+            with urllib.request.urlopen(req, context=ctx, timeout=25) as resp, open(temp_pip, "wb") as f_out:
+                f_out.write(resp.read())
+            if os.path.exists(temp_pip) and os.path.getsize(temp_pip) > 10000:
+                downloaded = True
+                break
+        except Exception:
+            try:
+                curl_bin = shutil.which("curl") or (r"C:\Windows\System32\curl.exe" if sys.platform == "win32" else None)
+                if curl_bin and os.path.exists(curl_bin):
+                    subprocess.run([curl_bin, "-sSL", url, "-o", temp_pip], capture_output=True, timeout=35)
+                    if os.path.exists(temp_pip) and os.path.getsize(temp_pip) > 10000:
+                        downloaded = True
+                        break
+            except Exception:
+                pass
+
+    if downloaded:
+        try:
+            subprocess.run([target_python, temp_pip, "--no-warn-script-location", "--no-setuptools", "--no-wheel"], capture_output=True, text=True, timeout=120)
+            chk = subprocess.run([target_python, "-m", "pip", "--version"], capture_output=True, text=True, timeout=10)
+            if chk.returncode == 0:
+                print_success("Auto-reparación: Pip instalado y verificado exitosamente." if lang == "es" else "Self-healing: Pip installed and verified successfully.")
+                return True
+        except Exception:
+            pass
+
+    # Método 4: Fallback modo usuario (--user) en Windows si hay restricciones de permisos globales
+    if sys.platform == "win32" and os.path.exists(local_get_pip):
+        try:
+            print_step("Auto-reparación: Intentando despliegue de pip en espacio de usuario (--user)..." if lang == "es" else "Self-healing: Attempting pip deployment in user space (--user)...")
+            subprocess.run([target_python, local_get_pip, "--user", "--no-warn-script-location"], capture_output=True, timeout=120)
+            chk = subprocess.run([target_python, "-m", "pip", "--version"], capture_output=True, text=True, timeout=10)
+            if chk.returncode == 0:
+                print_success("Auto-reparación: Pip instalado en espacio de usuario." if lang == "es" else "Self-healing: Pip installed in user space.")
+                return True
+        except Exception:
+            pass
+
+    return False
+
 def ensure_python_libraries(lang="es") -> bool:
     """Verifica e instala dependencias de Python con auto-reparación multi-fase y soporte multiplataforma."""
     required = ["fastapi", "uvicorn", "aiohttp", "requests", "psutil", "pydantic"]
@@ -91,17 +190,13 @@ def ensure_python_libraries(lang="es") -> bool:
         print_success(msg)
         return True
 
-    msg_install = f"Librerías faltantes detectadas: {', '.join(missing)}. Iniciando auto-reparación..." if lang == "es" else f"Missing packages detected: {', '.join(missing)}. Initiating self-healing..."
+    msg_install = f"Librerías faltantes detectadas: {', '.join(missing)}. Iniciando auto-reparación total..." if lang == "es" else f"Missing packages detected: {', '.join(missing)}. Initiating full self-healing..."
     print_step(msg_install)
 
-    # 0. Asegurar que pip esté presente y funcional en el entorno
-    try:
-        pip_check = subprocess.run([sys.executable, "-m", "pip", "--version"], capture_output=True, text=True)
-        if pip_check.returncode != 0:
-            print_warning("Auto-reparación: Módulo pip no detectado en el entorno. Inicializando con ensurepip..." if lang == "es" else "Self-healing: pip module not detected. Bootstrapping with ensurepip...")
-            subprocess.run([sys.executable, "-m", "ensurepip", "--upgrade"], capture_output=True)
-    except Exception:
-        pass
+    # 0. Asegurar que pip esté presente y 100% funcional en el entorno
+    pip_ok = bootstrap_pip(sys.executable, lang)
+    if not pip_ok:
+        print_warning("Auto-reparación: No se pudo verificar pip directamente. Reintentando con configuración de entorno..." if lang == "es" else "Self-healing: Pip not verified directly. Retrying with environment config...")
 
     is_venv = (sys.prefix != getattr(sys, "base_prefix", sys.prefix))
     extra_flags = []
@@ -115,16 +210,19 @@ def ensure_python_libraries(lang="es") -> bool:
             pass
 
     # Intento 1: Ruedas binarias pre-compiladas directas (--prefer-binary)
+    # En Windows, forzar --only-binary=:all: para evitar compilador C++ de Visual Studio
     cmd1 = [sys.executable, "-m", "pip", "install", "--prefer-binary", *extra_flags, *missing]
+    if sys.platform == "win32":
+        cmd1.insert(4, "--only-binary=:all:")
     try:
-        res1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=90)
+        res1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=120)
         if res1.returncode == 0:
-            try:
-                import site, importlib
-                site.main()
-                importlib.invalidate_caches()
-            except Exception:
-                pass
+            import site, importlib
+            site.main()
+            user_site = getattr(site, "getusersitepackages", lambda: None)()
+            if user_site and user_site not in sys.path:
+                sys.path.insert(0, user_site)
+            importlib.invalidate_caches()
             print_success("Librerías instaladas exitosamente con ruedas binarias pre-compiladas." if lang == "es" else "Libraries installed successfully with pre-compiled wheels.")
             return True
     except Exception:
@@ -138,19 +236,19 @@ def ensure_python_libraries(lang="es") -> bool:
         "--trusted-host", "pypi.org",
         "--trusted-host", "files.pythonhosted.org",
         "--trusted-host", "pypi.python.org",
-        "--timeout", "90",
+        "--timeout", "120",
         *extra_flags,
         *missing
     ]
     try:
-        res2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=120)
+        res2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=150)
         if res2.returncode == 0:
-            try:
-                import site, importlib
-                site.main()
-                importlib.invalidate_caches()
-            except Exception:
-                pass
+            import site, importlib
+            site.main()
+            user_site = getattr(site, "getusersitepackages", lambda: None)()
+            if user_site and user_site not in sys.path:
+                sys.path.insert(0, user_site)
+            importlib.invalidate_caches()
             print_success("Librerías instaladas y verificadas." if lang == "es" else "Libraries installed and verified.")
             return True
     except Exception:
@@ -161,9 +259,9 @@ def ensure_python_libraries(lang="es") -> bool:
     for pkg in missing:
         try:
             pkg_cmd = [sys.executable, "-m", "pip", "install", "--prefer-binary", *extra_flags, pkg]
-            if pkg == "psutil" and sys.platform == "win32":
-                pkg_cmd = [sys.executable, "-m", "pip", "install", "--only-binary=:all:", pkg]
-            subprocess.run(pkg_cmd, capture_output=True, text=True, timeout=45)
+            if sys.platform == "win32":
+                pkg_cmd = [sys.executable, "-m", "pip", "install", "--prefer-binary", "--only-binary=:all:", pkg]
+            subprocess.run(pkg_cmd, capture_output=True, text=True, timeout=60)
         except Exception:
             pass
 
@@ -172,7 +270,7 @@ def ensure_python_libraries(lang="es") -> bool:
         try:
             print_warning("Auto-reparación: Instalando en el espacio de usuario local (--user)..." if lang == "es" else "Self-healing: Installing into user space (--user)...")
             cmd_user = [sys.executable, "-m", "pip", "install", "--user", "--prefer-binary", *missing]
-            subprocess.run(cmd_user, capture_output=True, text=True, timeout=90)
+            subprocess.run(cmd_user, capture_output=True, text=True, timeout=120)
         except Exception:
             pass
 
@@ -180,6 +278,9 @@ def ensure_python_libraries(lang="es") -> bool:
     try:
         import site, importlib
         site.main()
+        user_site = getattr(site, "getusersitepackages", lambda: None)()
+        if user_site and user_site not in sys.path:
+            sys.path.insert(0, user_site)
         importlib.invalidate_caches()
     except Exception:
         pass
@@ -192,13 +293,32 @@ def ensure_python_libraries(lang="es") -> bool:
         except ImportError:
             still_missing.append(pkg)
 
+    # Intento 5: Auto-recuperación agresiva final si todavía falta algún paquete
+    if still_missing:
+        print_step("Auto-reparación final: Descargando e instalando ruedas sin caché..." if lang == "es" else "Final self-healing: Downloading and installing wheels without cache...")
+        for pkg in still_missing:
+            try:
+                rec_cmd = [sys.executable, "-m", "pip", "install", "--no-cache-dir", "--force-reinstall", "--prefer-binary", pkg]
+                subprocess.run(rec_cmd, capture_output=True, text=True, timeout=60)
+            except Exception:
+                pass
+        
+        # Volver a verificar
+        still_missing = [p for p in still_missing if not _can_import(p)]
+
     if not still_missing:
-        print_success("Todas las librerías se cargaron y verificaron correctamente." if lang == "es" else "All packages loaded and verified successfully.")
+        print_success("Auto-reparación completada: Todas las librerías se cargaron y verificaron correctamente." if lang == "es" else "Self-healing completed: All packages loaded and verified successfully.")
         return True
     else:
-        err_msg = f"No se pudieron cargar automáticamente: {', '.join(still_missing)}" if lang == "es" else f"Could not auto-load: {', '.join(still_missing)}"
+        err_msg = f"Auto-reparación parcial: Se intentó la instalación pero las siguientes librerías no pudieron inicializarse: {', '.join(still_missing)}" if lang == "es" else f"Partial self-healing: The following packages could not be initialized: {', '.join(still_missing)}"
         print_error(err_msg)
-        print_info(f"Sugerencia de auto-reparación manual: Ejecuta '{sys.executable} -m pip install {' '.join(still_missing)}'")
+        return False
+
+def _can_import(pkg: str) -> bool:
+    try:
+        __import__(pkg)
+        return True
+    except ImportError:
         return False
 
 def check_and_install_docker(os_info: dict, lang="es") -> tuple[bool, str]:

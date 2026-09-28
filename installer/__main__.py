@@ -39,20 +39,48 @@ def auto_bootstrap_venv():
     else:
         venv_python = os.path.join(venv_dir, "bin", "python3")
 
-    if not os.path.exists(venv_python):
-        print(f"\n{Colors.CYAN}[*] Detectado interprete Python global de sistema.{Colors.RESET}")
-        print(f"{Colors.YELLOW}[*] Auto-reparación: Creando entorno virtual aislado (.venv) para garantizar permisos y librerías...{Colors.RESET}")
+    needs_create = True
+    if os.path.exists(venv_python):
         try:
-            import venv
-            venv.create(venv_dir, with_pip=True)
+            chk = subprocess.run([venv_python, "-c", "import sys"], capture_output=True, timeout=5)
+            if chk.returncode == 0:
+                needs_create = False
         except Exception:
-            subprocess.run([sys.executable, "-m", "venv", venv_dir], check=False)
+            needs_create = True
+
+    if needs_create:
+        print(f"\n{Colors.CYAN}[*] Detectado interprete Python de sistema.{Colors.RESET}")
+        print(f"{Colors.YELLOW}[*] Auto-reparación: Creando entorno virtual aislado (.venv)...{Colors.RESET}")
+        created = False
+        try:
+            res = subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True, timeout=30)
+            if res.returncode == 0 and os.path.exists(venv_python):
+                created = True
+        except Exception:
+            pass
+
+        if not created or not os.path.exists(venv_python):
+            # Fallback seguro para Windows 11 y sistemas con ensurepip desactivado
+            print(f"{Colors.YELLOW}[*] Auto-reparación: Inicializando entorno seguro con --without-pip...{Colors.RESET}")
+            subprocess.run([sys.executable, "-m", "venv", "--without-pip", venv_dir], capture_output=True, timeout=30)
 
     if os.path.exists(venv_python):
-        print(f"{Colors.GREEN}[OK] Conmutando ejecucion a entorno aislado: {venv_python}{Colors.RESET}\n")
-        subprocess.run([venv_python, "-m", "ensurepip", "--upgrade"], capture_output=True)
-        subprocess.run([venv_python, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel", "-q", "--prefer-binary"], capture_output=True)
+        # Asegurar pip dentro del entorno virtual usando bootstrap empaquetado si falta
+        chk_pip = subprocess.run([venv_python, "-m", "pip", "--version"], capture_output=True, text=True)
+        if chk_pip.returncode != 0:
+            print(f"{Colors.YELLOW}[*] Auto-reparación: Bootstrap autónomo de pip en entorno virtual...{Colors.RESET}")
+            local_get_pip = os.path.join(ROOT_DIR, "installer", "get-pip.py")
+            if os.path.exists(local_get_pip):
+                subprocess.run([venv_python, local_get_pip, "--no-warn-script-location", "--no-setuptools", "--no-wheel"], capture_output=True, timeout=120)
+            else:
+                subprocess.run([venv_python, "-m", "ensurepip", "--upgrade"], capture_output=True, timeout=60)
+
+        print(f"{Colors.GREEN}[OK] Conmutando ejecución a entorno aislado: {venv_python}{Colors.RESET}\n")
         
+        # Pre-instalar dependencias básicas en segundo plano si faltan
+        extra_flag = ["--only-binary=:all:"] if sys.platform == "win32" else []
+        subprocess.run([venv_python, "-m", "pip", "install", "--prefer-binary", *extra_flag, "fastapi", "uvicorn", "aiohttp", "requests", "psutil", "pydantic", "-q"], capture_output=True, timeout=120)
+
         env = os.environ.copy()
         env["PYTHONPATH"] = ROOT_DIR
         args = [a for a in sys.argv[1:] if a != "--no-venv-bootstrap"]
