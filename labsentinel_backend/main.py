@@ -692,6 +692,53 @@ def collect_data() -> dict:
     n_list = list(NOTIFICATIONS_QUEUE)
     NOTIFICATIONS_QUEUE.clear()
 
+    # Real network interfaces detection
+    net_interfaces = []
+    primary_interface = None
+    try:
+        if_stats = psutil.net_if_stats()
+        if_addrs = psutil.net_if_addrs()
+        
+        for iface_name, stats in if_stats.items():
+            name_lower = iface_name.lower()
+            if "loopback" in name_lower or name_lower == "lo":
+                continue
+            
+            if name_lower.startswith("wl") or any(w in name_lower for w in ["wi-fi", "wifi", "wlan", "wireless", "802.11"]):
+                iface_type = "wifi"
+            elif any(w in name_lower for w in ["tailscale", "tun", "wireguard", "wg", "vpn"]):
+                iface_type = "vpn"
+            elif name_lower.startswith("en") or name_lower.startswith("eth") or any(w in name_lower for w in ["ethernet", "lan"]):
+                iface_type = "ethernet"
+            else:
+                iface_type = "ethernet"
+            
+            ipv4 = ""
+            mac = ""
+            for addr in if_addrs.get(iface_name, []):
+                if addr.family == socket.AF_INET and not addr.address.startswith("127."):
+                    ipv4 = addr.address
+                elif getattr(addr, 'family', None) in (getattr(psutil, 'AF_LINK', None), getattr(socket, 'AF_PACKET', None)):
+                    mac = addr.address
+            
+            if stats.isup and ipv4:
+                item = {
+                    "name": iface_name,
+                    "type": iface_type,
+                    "isup": stats.isup,
+                    "speed": stats.speed,
+                    "ip": ipv4,
+                    "mac": mac
+                }
+                net_interfaces.append(item)
+                if not primary_interface and iface_type in ("wifi", "ethernet"):
+                    primary_interface = item
+    except Exception:
+        pass
+    
+    if not primary_interface and net_interfaces:
+        primary_interface = net_interfaces[0]
+
     result_data = {
         "printer": klipper_resp,
         "moonraker": moonraker_info,
@@ -699,6 +746,15 @@ def collect_data() -> dict:
         "containers": containers,
         "network": {
             "neighbors": neighbors,
+            "interfaces": net_interfaces,
+            "primary": primary_interface or {
+                "name": "Ethernet",
+                "type": "ethernet",
+                "isup": True,
+                "speed": 1000,
+                "ip": "127.0.0.1",
+                "mac": ""
+            }
         },
         "tailscale": tailscale,
         "system": {
@@ -722,6 +778,23 @@ def collect_data() -> dict:
     _CACHED_SYSTEM_DATA = result_data
     _LAST_FULL_SCAN_TIME = now
     return result_data
+
+@app.get("/api/remote/proxy")
+async def remote_proxy(target_url: str):
+    """Proxy request to remote Sentinel nodes to prevent CORS / Mixed Content issues."""
+    try:
+        if not (target_url.startswith("http://") or target_url.startswith("https://")):
+            raise HTTPException(status_code=400, detail="Invalid target URL")
+        
+        req = urllib.request.Request(
+            target_url,
+            headers={"User-Agent": "SentinelOS-Core-Proxy/1.0", "Accept": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = resp.read()
+            return json.loads(data.decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Proxy error: {str(e)}")
 
 @app.get("/api/health")
 def health_check():

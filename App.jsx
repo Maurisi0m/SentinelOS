@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers } from 'lucide-react';
+import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers, Plus, CheckCircle2, AlertCircle, Cable, Filter, Sliders, Globe, Radio } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Terminal as TerminalXTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -42,6 +42,238 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isGlobalFullscreen, setIsGlobalFullscreen] = useState(false);
   const [networkSubTab, setNetworkSubTab] = useState('topology');
+
+  // Multi-Server Permanent Connections & Telemetry State
+  const [connectedServers, setConnectedServers] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sentinel_connected_servers');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [
+      { id: 'local', name: 'Host Maestro (Local)', url: '', isLocal: true, status: 'online' }
+    ];
+  });
+
+  const [remoteServersData, setRemoteServersData] = useState({});
+  const [selectedServers, setSelectedServers] = useState(['local']);
+  const [serverModalOpen, setServerModalOpen] = useState(false);
+  const [newServerForm, setNewServerForm] = useState({ name: '', url: '', token: '' });
+  const [serverTestStatus, setServerTestStatus] = useState(null);
+  const [serverTestLoading, setServerTestLoading] = useState(false);
+
+  // Multi-Server Logs State
+  const [selectedLogServers, setSelectedLogServers] = useState(['local']);
+  const [remoteLogs, setRemoteLogs] = useState({});
+
+  // Persistir servidores conectados en localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('sentinel_connected_servers', JSON.stringify(connectedServers));
+    } catch (e) {}
+  }, [connectedServers]);
+
+  // Polling de telemetría de servidores remotos
+  useEffect(() => {
+    const remotes = connectedServers.filter(s => !s.isLocal);
+    if (remotes.length === 0) return;
+
+    const pollRemotes = async () => {
+      for (const srv of remotes) {
+        if (!srv.url) continue;
+        const targetUrl = srv.url.replace(/\/+$/, '');
+        try {
+          let res;
+          const headers = srv.token ? { 'Authorization': `Bearer ${srv.token}`, 'X-Sentinel-Token': srv.token } : {};
+          try {
+            res = await fetch(`${targetUrl}/api/data`, { headers, signal: AbortSignal.timeout(2500) });
+          } catch (directErr) {
+            res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/data')}`, { signal: AbortSignal.timeout(3000) });
+          }
+
+          if (res.ok) {
+            const rData = await res.json();
+            setRemoteServersData(prev => {
+              const prevNode = prev[srv.id] || {};
+              const curHist = prevNode.history || [];
+              const lastCpu = rData.metrics_history?.[rData.metrics_history.length - 1]?.cpu ?? 0;
+              const lastRam = rData.metrics_history?.[rData.metrics_history.length - 1]?.ram ?? 0;
+              const timeStr = new Date().toLocaleTimeString();
+              const hist = rData.metrics_history?.length ? rData.metrics_history : [...curHist, { time: timeStr, cpu: lastCpu, ram: lastRam }].slice(-30);
+
+              return {
+                ...prev,
+                [srv.id]: {
+                  data: rData,
+                  history: hist,
+                  status: 'online',
+                  lastSeen: Date.now()
+                }
+              };
+            });
+          } else {
+            setRemoteServersData(prev => ({
+              ...prev,
+              [srv.id]: { ...(prev[srv.id] || {}), status: 'offline' }
+            }));
+          }
+        } catch (e) {
+          setRemoteServersData(prev => ({
+            ...prev,
+            [srv.id]: { ...(prev[srv.id] || {}), status: 'offline' }
+          }));
+        }
+      }
+    };
+
+    pollRemotes();
+    const interval = setInterval(pollRemotes, 2000);
+    return () => clearInterval(interval);
+  }, [connectedServers]);
+
+  // Polling de logs para servidores remotos
+  useEffect(() => {
+    if (activeTab !== 'logs') return;
+    const remotes = connectedServers.filter(s => !s.isLocal);
+    if (remotes.length === 0) return;
+
+    const pollLogs = async () => {
+      for (const srv of remotes) {
+        if (!srv.url) continue;
+        const targetUrl = srv.url.replace(/\/+$/, '');
+        try {
+          let res;
+          try {
+            res = await fetch(`${targetUrl}/api/logs`, { signal: AbortSignal.timeout(2500) });
+          } catch (e) {
+            res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/logs')}`, { signal: AbortSignal.timeout(3000) });
+          }
+          if (res.ok) {
+            const body = await res.json();
+            const logLines = (body.logs || '').split('\n').filter(Boolean).slice(-60);
+            setRemoteLogs(prev => ({
+              ...prev,
+              [srv.id]: logLines
+            }));
+          }
+        } catch (e) {}
+      }
+    };
+
+    pollLogs();
+    const interval = setInterval(pollLogs, 3000);
+    return () => clearInterval(interval);
+  }, [activeTab, connectedServers]);
+
+  // Manejadores de selección multi-servidor
+  const toggleServerSelection = (srvId) => {
+    setSelectedServers(prev => {
+      if (prev.includes(srvId)) {
+        if (prev.length === 1) return prev;
+        return prev.filter(id => id !== srvId);
+      } else {
+        return [...prev, srvId];
+      }
+    });
+  };
+
+  const selectSingleServer = (srvId) => {
+    setSelectedServers([srvId]);
+  };
+
+  const selectAllServers = () => {
+    setSelectedServers(connectedServers.map(s => s.id));
+  };
+
+  const toggleLogServerSelection = (srvId) => {
+    setSelectedLogServers(prev => {
+      if (prev.includes(srvId)) {
+        if (prev.length === 1) return prev;
+        return prev.filter(id => id !== srvId);
+      } else {
+        return [...prev, srvId];
+      }
+    });
+  };
+
+  const selectAllLogServers = () => {
+    setSelectedLogServers(connectedServers.map(s => s.id));
+  };
+
+  const handleTestServerConnection = async () => {
+    if (!newServerForm.url.trim()) return;
+    setServerTestLoading(true);
+    setServerTestStatus(null);
+    let target = newServerForm.url.trim();
+    if (!target.startsWith('http://') && !target.startsWith('https://')) {
+      target = `http://${target}`;
+    }
+    target = target.replace(/\/+$/, '');
+
+    try {
+      let res;
+      try {
+        res = await fetch(`${target}/api/node/info`, { signal: AbortSignal.timeout(2500) });
+      } catch (err) {
+        res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(target + '/api/node/info')}`, { signal: AbortSignal.timeout(3000) });
+      }
+
+      if (res.ok) {
+        const info = await res.json();
+        setServerTestStatus({
+          ok: true,
+          msg: `Conexión confirmada con ${info.node_name || 'Nodo Remoto'} (${info.cores || '?'} Núcleos, ${info.memory_gb || '?'} GB RAM)`
+        });
+      } else {
+        setServerTestStatus({ ok: false, msg: `El servidor respondió con código ${res.status}` });
+      }
+    } catch (e) {
+      setServerTestStatus({ ok: false, msg: 'No se pudo alcanzar el servidor. Verifica IP, puerto y firewall.' });
+    } finally {
+      setServerTestLoading(false);
+    }
+  };
+
+  const handleAddServer = (e) => {
+    e.preventDefault();
+    if (!newServerForm.url.trim()) return;
+    let target = newServerForm.url.trim();
+    if (!target.startsWith('http://') && !target.startsWith('https://')) {
+      target = `http://${target}`;
+    }
+    target = target.replace(/\/+$/, '');
+
+    const newId = `srv-${Date.now()}`;
+    const newEntry = {
+      id: newId,
+      name: newServerForm.name.trim() || `Servidor ${connectedServers.length}`,
+      url: target,
+      token: newServerForm.token.trim(),
+      isLocal: false,
+      status: 'online'
+    };
+
+    setConnectedServers(prev => [...prev, newEntry]);
+    setSelectedServers(prev => [...prev, newId]);
+    setSelectedLogServers(prev => [...prev, newId]);
+    setNewServerForm({ name: '', url: '', token: '' });
+    setServerTestStatus(null);
+    setServerModalOpen(false);
+    addNotification(`Servidor ${newEntry.name} conectado permanentemente.`, 'success');
+  };
+
+  const handleRemoveServer = (srvId) => {
+    if (srvId === 'local') return;
+    setConnectedServers(prev => prev.filter(s => s.id !== srvId));
+    setSelectedServers(prev => {
+      const filtered = prev.filter(id => id !== srvId);
+      return filtered.length > 0 ? filtered : ['local'];
+    });
+    setSelectedLogServers(prev => {
+      const filtered = prev.filter(id => id !== srvId);
+      return filtered.length > 0 ? filtered : ['local'];
+    });
+    addNotification('Servidor desconectado del panel.', 'info');
+  };
 
   // Interactive Onboarding Tour State
   const [tourActive, setTourActive] = useState(false);
@@ -495,307 +727,736 @@ function App() {
     const uptimeDays = Math.floor(uptimeSecs / 86400);
     const uptimeHours = Math.floor((uptimeSecs % 86400) / 3600);
 
+    const isVistaCompleta = selectedServers.length === connectedServers.length && connectedServers.length > 1;
+    const isMultiSelected = selectedServers.length > 1;
+
     return (
       <>
-        <div className="widget-grid">
-          <div className="summary-widget">
-            <div className="widget-icon"><Power size={24}/></div>
-            <div className="widget-info">
-              <span className="widget-title">Uptime</span>
-              <span className="widget-value">{uptimeDays}d {uptimeHours}h</span>
-            </div>
-          </div>
-          <div className="summary-widget">
-            <div className="widget-icon"><Database size={24}/></div>
-            <div className="widget-info">
-              <span className="widget-title">Docker</span>
-              <span className="widget-value" style={{color: dockerUp > 0 ? 'var(--success)' : ''}}>{dockerUp} / {dockerTotal} UP</span>
-            </div>
-          </div>
-          <div className="summary-widget">
-            <div className="widget-icon"><Printer size={24}/></div>
-            <div className="widget-info">
-              <span className="widget-title">3D Printer</span>
-              <span className="widget-value" style={{color: isKlipperReady ? 'var(--success)' : 'var(--danger)'}}>{klippyStatus}</span>
-            </div>
-          </div>
-          <div className="summary-widget" id="tour-tailscale-widget">
-            <div className="widget-icon"><Shield size={24}/></div>
-            <div className="widget-info">
-              <span className="widget-title">VPN Tailscale</span>
-              <span className="widget-value" style={{color: 'var(--accent)'}}>{tsOnline} PEERS</span>
-            </div>
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '1.5rem' }}>
-          <div className="glass-panel" id="tour-system-load">
-        <div className="panel-header"><Cpu /><h2>System Load & Hardware Telemetry</h2></div>
-        <div style={{display: 'flex', flexWrap: 'wrap', gap: '1.5rem', marginBottom: '1rem'}}>
-          <div><div className="stat-label">CPU ({cores} Cores)</div><div className="stat-value" style={{color: '#3b82f6', fontSize: '1.5rem'}}>{current.cpu}%</div></div>
-          <div><div className="stat-label">RAM</div><div className="stat-value" style={{color: '#10b981', fontSize: '1.5rem'}}>{current.ram}%</div></div>
-          <div><div className="stat-label">CPU Temp</div><div className="stat-value" style={{color: '#f59e0b', fontSize: '1.5rem'}}>{current.temp}°C</div></div>
-          {data.system?.gpu?.has_gpu && (
-            <div>
-              <div className="stat-label">GPU ({data.system.gpu.model ? (data.system.gpu.model.length > 20 ? data.system.gpu.model.slice(0, 18) + '...' : data.system.gpu.model) : 'GPU'})</div>
-              <div className="stat-value" style={{color: '#a855f7', fontSize: '1.5rem'}}>
-                {current.gpu ?? data.system.gpu.usage ?? 0}%
-              </div>
-            </div>
-          )}
-          {data.system?.gpu?.has_gpu && (current.gpu_temp || data.system.gpu.temp) > 0 && (
-            <div>
-              <div className="stat-label">GPU Temp</div>
-              <div className="stat-value" style={{color: '#ec4899', fontSize: '1.5rem'}}>
-                {current.gpu_temp || data.system.gpu.temp}°C
-              </div>
-            </div>
-          )}
-        </div>
-        <div style={{ height: 280 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={history}>
-              <defs>
-                <linearGradient id="colorCpu" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
-                <linearGradient id="colorRam" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
-                <linearGradient id="colorGpu" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/><stop offset="95%" stopColor="#a855f7" stopOpacity={0}/></linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-              <XAxis dataKey="time" hide />
-              <YAxis hide />
-              <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="cpu" stroke="#3b82f6" fillOpacity={1} fill="url(#colorCpu)" name="CPU %" />
-              <Area type="monotone" dataKey="ram" stroke="#10b981" fillOpacity={1} fill="url(#colorRam)" name="RAM %" />
-              {data.system?.gpu?.has_gpu && (
-                <Area type="monotone" dataKey="gpu" stroke="#a855f7" fillOpacity={1} fill="url(#colorGpu)" name="GPU %" />
-              )}
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        {/* Barra Superior de Control y Filtros Multi-Servidor */}
+        <div className="multi-server-control-bar">
+          <div className="server-chip-group">
+            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Rendimiento:
+            </span>
 
-        {/* Hardware Specifications Badges */}
-        <div id="tour-hardware-specs" style={{
-          display: 'grid',
-          gridTemplateColumns: data.system?.gpu?.has_gpu ? 'repeat(auto-fit, minmax(180px, 1fr))' : 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap: '0.85rem',
-          marginTop: '1.25rem',
-          paddingTop: '1rem',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)'
-        }}>
-          {/* CPU Specs */}
-          <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', color: '#3b82f6', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
-              <Cpu size={14} /> PROCESADOR (CPU)
-            </div>
-            <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={data.system?.cpu_model || 'Intel/AMD Processor'}>
-              {data.system?.cpu_model || 'Procesador Principal'}
-            </div>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-              <span>{cores} Núcleos</span> • <span>{data.system?.cpu_freqs?.[0] ? `${data.system.cpu_freqs[0]} MHz` : 'Frecuencia Dinámica'}</span>
-            </div>
-          </div>
-
-          {/* RAM Specs */}
-          <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', color: '#10b981', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
-              <Database size={14} /> MEMORIA (RAM)
-            </div>
-            <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
-              {((data.system?.memory?.total || 0) / 1024**3).toFixed(1)} GB Total
-            </div>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-              <span style={{ color: '#10b981' }}>{((data.system?.memory?.used || 0) / 1024**3).toFixed(1)} GB en uso</span> • <span>{((data.system?.memory?.available || 0) / 1024**3).toFixed(1)} GB libres</span>
-            </div>
-          </div>
-
-          {/* GPU Specs */}
-          {data.system?.gpu?.has_gpu && (
-            <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', color: '#a855f7', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
-                <Zap size={14} /> ACELERADOR (GPU)
-              </div>
-              <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={data.system.gpu.model}>
-                {data.system.gpu.model || 'GPU Dedicada'}
-              </div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                <span>{data.system.gpu.vram_total_mb ? `${(data.system.gpu.vram_total_mb / 1024).toFixed(1)} GB VRAM` : 'Aceleración Directa'}</span>
-                {data.system.gpu.driver ? <span> • Driver {data.system.gpu.driver}</span> : null}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="glass-panel">
-        <div className="panel-header"><Network /><h2>Network I/O</h2></div>
-        <div style={{display: 'flex', gap: '2rem', marginBottom: '1rem'}}>
-          <div><div className="stat-label">Download</div><div className="stat-value" style={{color: '#8b5cf6', fontSize: '1.5rem'}}>{current.net_rx} MB/s</div></div>
-          <div><div className="stat-label">Upload</div><div className="stat-value" style={{color: '#ec4899', fontSize: '1.5rem'}}>{current.net_tx} MB/s</div></div>
-        </div>
-        <div style={{ height: 300 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={history}>
-              <defs>
-                <linearGradient id="colorRx" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/><stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/></linearGradient>
-                <linearGradient id="colorTx" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ec4899" stopOpacity={0.3}/><stop offset="95%" stopColor="#ec4899" stopOpacity={0}/></linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-              <XAxis dataKey="time" hide />
-              <YAxis hide />
-              <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="net_rx" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorRx)" name="Down (MB/s)" />
-              <Area type="monotone" dataKey="net_tx" stroke="#ec4899" fillOpacity={1} fill="url(#colorTx)" name="Up (MB/s)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="glass-panel">
-        <div className="panel-header"><HardDrive /><h2>Storage I/O</h2></div>
-        <div style={{display: 'flex', gap: '2rem', marginBottom: '1rem'}}>
-          <div><div className="stat-label">Read</div><div className="stat-value" style={{color: '#06b6d4', fontSize: '1.5rem'}}>{current.disk_r} MB/s</div></div>
-          <div><div className="stat-label">Write</div><div className="stat-value" style={{color: '#f43f5e', fontSize: '1.5rem'}}>{current.disk_w} MB/s</div></div>
-          <div style={{marginLeft: 'auto', textAlign:'right'}}><div className="stat-label">Used Space</div><div className="stat-value" style={{fontSize: '1.1rem'}}>{((data.system.disks && data.system.disks[0]?.used)/1024**3 || 0).toFixed(1)} GB / {((data.system.disks && data.system.disks[0]?.total)/1024**3 || 0).toFixed(0)} GB</div></div>
-        </div>
-        <div style={{ height: 300 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={history}>
-              <defs>
-                <linearGradient id="colorR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3}/><stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient>
-                <linearGradient id="colorW" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3}/><stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/></linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-              <XAxis dataKey="time" hide />
-              <YAxis hide />
-              <Tooltip content={<CustomTooltip />} />
-              <Area type="step" dataKey="disk_r" stroke="#06b6d4" fillOpacity={1} fill="url(#colorR)" name="Read (MB/s)" />
-              <Area type="step" dataKey="disk_w" stroke="#f43f5e" fillOpacity={1} fill="url(#colorW)" name="Write (MB/s)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-      
-      <div className="glass-panel">
-        <div className="panel-header"><Activity /><h2>Load Average ({cores} Cores)</h2></div>
-        <div style={{display: 'flex', gap: '2rem', justifyContent:'center', marginTop:'2rem'}}>
-          <div style={{textAlign:'center'}}>
-            <div className="stat-value" style={{fontSize: '2rem', color: data.system.loadavg[0] > cores ? 'var(--danger)' : 'var(--text-primary)'}}>{data.system.loadavg[0].toFixed(2)}</div>
-            <div className="stat-label">1 Min</div>
-          </div>
-          <div style={{textAlign:'center'}}>
-            <div className="stat-value" style={{fontSize: '2rem', color: data.system.loadavg[1] > cores ? 'var(--warning)' : 'var(--text-primary)'}}>{data.system.loadavg[1].toFixed(2)}</div>
-            <div className="stat-label">5 Min</div>
-          </div>
-          <div style={{textAlign:'center'}}>
-            <div className="stat-value" style={{fontSize: '2rem', color: data.system.loadavg[2] > cores ? 'var(--warning)' : 'var(--text-primary)'}}>{data.system.loadavg[2].toFixed(2)}</div>
-            <div className="stat-label">15 Min</div>
-          </div>
-        </div>
-      </div>
-      <div className="glass-panel">
-        <div className="panel-header"><Database /><h2>Memory & Swap</h2></div>
-        <div style={{fontFamily: 'monospace', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '1rem'}}>
-          <div>
-            <div style={{display:'flex', justifyContent:'space-between', marginBottom:'0.2rem'}}>
-              <span>Used: {(data.system.memory.used/1024**3).toFixed(1)} GiB</span>
-              <span>Total: {(data.system.memory.total/1024**3).toFixed(1)} GiB</span>
-            </div>
-            <div className="btop-bar-container" style={{height:'16px'}}>
-              <div className="btop-bar-fill" style={{width: `${(data.system.memory.used/data.system.memory.total)*100}%`, background: '#10b981'}}></div>
-            </div>
-            <div style={{display:'flex', justifyContent:'space-between', marginTop:'0.2rem', color:'var(--text-secondary)'}}>
-              <span>Avail: {(data.system.memory.available/1024**3).toFixed(1)} GiB</span>
-              <span>Cached: {(data.system.memory.cached/1024**3).toFixed(1)} GiB</span>
-              <span>Free: {(data.system.memory.free/1024**3).toFixed(1)} GiB</span>
-            </div>
-          </div>
-          <div>
-            <div style={{display:'flex', justifyContent:'space-between', marginBottom:'0.2rem'}}>
-              <span>Swap Used: {((data.system.memory.swap_total - data.system.memory.swap_free)/1024**3).toFixed(1)} GiB</span>
-              <span>Total: {(data.system.memory.swap_total/1024**3).toFixed(1)} GiB</span>
-            </div>
-            <div className="btop-bar-container" style={{height:'16px'}}>
-              <div className="btop-bar-fill" style={{width: `${data.system.memory.swap_total > 0 ? ((data.system.memory.swap_total - data.system.memory.swap_free)/data.system.memory.swap_total)*100 : 0}%`, background: '#f59e0b'}}></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="glass-panel">
-        <div className="panel-header"><HardDrive /><h2>Disks & Mounts</h2></div>
-        <div style={{fontFamily: 'monospace', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '1rem', overflowY:'auto', maxHeight:'300px'}}>
-          {data.system.disks?.map((d, i) => {
-             const usedPct = (d.used / d.total) * 100;
-             const color = usedPct > 90 ? '#ef4444' : usedPct > 70 ? '#f59e0b' : '#3b82f6';
-             return (
-               <div key={i}>
-                 <div style={{display:'flex', justifyContent:'space-between', marginBottom:'0.2rem'}}>
-                   <span><span style={{color:'var(--text-secondary)'}}>{d.device}</span> <span style={{fontWeight:'bold'}}>{d.mountpoint}</span></span>
-                   <span>{usedPct.toFixed(0)}% ({(d.free/1024**3).toFixed(1)}G free)</span>
-                 </div>
-                 <div className="btop-bar-container" style={{height:'10px'}}>
-                   <div className="btop-bar-fill" style={{width: `${usedPct}%`, background: color}}></div>
-                 </div>
-               </div>
-             );
-          })}
-        </div>
-      </div>
-
-      <div className="glass-panel">
-        <div className="panel-header"><Activity /><h2>S.M.A.R.T. Health</h2></div>
-        <table className="os-table">
-          <thead><tr><th>Device</th><th>Model</th><th>Health</th><th>Temp</th></tr></thead>
-          <tbody>
-            {data.system.smart?.map((d, i) => (
-              <tr key={i}>
-                <td style={{fontFamily: 'monospace', color: 'var(--text-secondary)'}}>{d.device}</td>
-                <td>{d.model}</td>
-                <td style={{color: d.health === 'PASSED' ? 'var(--success)' : 'var(--danger)', fontWeight: 'bold'}}>{d.health}</td>
-                <td style={{color: 'var(--warning)'}}>{d.temp}°C</td>
-              </tr>
-            ))}
-            {(!data.system.smart || data.system.smart.length === 0) && (
-              <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No SMART data available</td></tr>
+            {connectedServers.length > 1 && (
+              <button
+                className={`server-filter-chip ${isVistaCompleta ? 'vista-completa active' : ''}`}
+                onClick={selectAllServers}
+                title="Ver el rendimiento consolidado de todos los equipos y servidores en pantalla completa"
+              >
+                <Layers size={14} /> Vista Completa ({connectedServers.length} Nodos)
+              </button>
             )}
-          </tbody>
-        </table>
-      </div>
 
-      <div className="glass-panel">
-        <div className="panel-header"><User /><h2>Active Users</h2></div>
-        <table className="os-table">
-          <thead><tr><th>User</th><th>Terminal</th><th>Login Time</th><th>IP</th></tr></thead>
-          <tbody>
-            {data.system.active_users?.map((u, i) => (
-              <tr key={i}>
-                <td style={{fontWeight: 'bold', color: 'var(--accent)'}}>{u.user}</td>
-                <td>{u.terminal}</td>
-                <td>{u.login_time}</td>
-                <td style={{fontFamily: 'monospace'}}>{u.ip}</td>
-              </tr>
-            ))}
-            {(!data.system.active_users || data.system.active_users.length === 0) && (
-              <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No active users</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            {connectedServers.map((srv) => {
+              const isSelected = selectedServers.includes(srv.id);
+              const isOnline = srv.isLocal ? true : remoteServersData[srv.id]?.status !== 'offline';
 
-      <div className="glass-panel">
-        <div className="panel-header"><Cpu /><h2>CPU Frequencies</h2></div>
-        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1rem'}}>
-          {data.system.cpu_freqs?.map((freq, i) => (
-            <div key={i} style={{background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '8px', textAlign: 'center'}}>
-              <div style={{color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.25rem'}}>Core {i}</div>
-              <div style={{color: 'var(--accent)', fontFamily: 'monospace', fontSize: '1.2rem'}}>{freq.toFixed(0)} MHz</div>
-            </div>
-          ))}
+              return (
+                <button
+                  key={srv.id}
+                  className={`server-filter-chip ${isSelected ? 'active' : ''}`}
+                  onClick={() => toggleServerSelection(srv.id)}
+                  onDoubleClick={() => selectSingleServer(srv.id)}
+                  title={`Click para alternar en vista, doble click para ver únicamente ${srv.name}`}
+                >
+                  <div
+                    style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: isOnline ? '#10b981' : '#ef4444',
+                      boxShadow: isOnline ? '0 0 6px #10b981' : 'none'
+                    }}
+                  />
+                  {isSelected && <Check size={13} color="#60a5fa" />}
+                  <span>{srv.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setServerModalOpen(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                fontSize: '0.82rem',
+                padding: '0.4rem 0.85rem'
+              }}
+            >
+              <Server size={14} /> Conectar Servidor Remoto
+            </button>
+          </div>
         </div>
-      </div>
 
-    </div>
-    </>
-  );
+        {/* 1. VISTA MULTI-SERVIDOR / VISTA COMPLETA (Grid Comparativo) */}
+        {isMultiSelected ? (
+          <>
+            {/* Resumen Global del Clúster / Red de Nodos */}
+            <div className="cluster-summary-banner">
+              <div className="cluster-stat-card">
+                <div className="cluster-stat-icon" style={{ background: 'rgba(59, 130, 246, 0.2)' }}>
+                  <Cpu size={22} color="#60a5fa" />
+                </div>
+                <div>
+                  <div className="stat-label">Núcleos de Cómputo Clúster</div>
+                  <div className="stat-value" style={{ color: '#60a5fa', fontSize: '1.4rem' }}>
+                    {selectedServers.reduce((acc, id) => {
+                      if (id === 'local') return acc + (data?.system?.cpu_cores || 1);
+                      return acc + (remoteServersData[id]?.data?.system?.cpu_cores || 0);
+                    }, 0)} Cores
+                  </div>
+                </div>
+              </div>
+
+              <div className="cluster-stat-card">
+                <div className="cluster-stat-icon" style={{ background: 'rgba(16, 185, 129, 0.2)' }}>
+                  <Database size={22} color="#34d399" />
+                </div>
+                <div>
+                  <div className="stat-label">Memoria RAM Total Clúster</div>
+                  <div className="stat-value" style={{ color: '#34d399', fontSize: '1.4rem' }}>
+                    {(selectedServers.reduce((acc, id) => {
+                      if (id === 'local') return acc + ((data?.system?.memory?.total || 0) / 1024**3);
+                      return acc + ((remoteServersData[id]?.data?.system?.memory?.total || 0) / 1024**3);
+                    }, 0)).toFixed(1)} GB
+                  </div>
+                </div>
+              </div>
+
+              <div className="cluster-stat-card">
+                <div className="cluster-stat-icon" style={{ background: 'rgba(168, 85, 247, 0.2)' }}>
+                  <Activity size={22} color="#a855f7" />
+                </div>
+                <div>
+                  <div className="stat-label">Carga CPU Promedio</div>
+                  <div className="stat-value" style={{ color: '#a855f7', fontSize: '1.4rem' }}>
+                    {(selectedServers.reduce((acc, id) => {
+                      if (id === 'local') return acc + (current.cpu || 0);
+                      const srvHist = remoteServersData[id]?.history || [];
+                      const lastCpu = srvHist[srvHist.length - 1]?.cpu ?? 0;
+                      return acc + lastCpu;
+                    }, 0) / selectedServers.length).toFixed(1)}%
+                  </div>
+                </div>
+              </div>
+
+              <div className="cluster-stat-card">
+                <div className="cluster-stat-icon" style={{ background: 'rgba(245, 158, 11, 0.2)' }}>
+                  <Server size={22} color="#fbbf24" />
+                </div>
+                <div>
+                  <div className="stat-label">Nodos en Visualización</div>
+                  <div className="stat-value" style={{ color: '#fbbf24', fontSize: '1.4rem' }}>
+                    {selectedServers.filter(id => id === 'local' || remoteServersData[id]?.status !== 'offline').length} / {selectedServers.length} Online
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Cuadrícula Comparativa de Nodos */}
+            <div className="multi-node-grid">
+              {selectedServers.map((srvId) => {
+                const srv = connectedServers.find(s => s.id === srvId) || { id: srvId, name: srvId, isLocal: false };
+                const isLocalNode = srv.isLocal;
+                const nodeData = isLocalNode ? data : remoteServersData[srvId]?.data;
+                const nodeHistory = isLocalNode ? history : (remoteServersData[srvId]?.history || []);
+                const lastMetric = nodeHistory[nodeHistory.length - 1] || { cpu: 0, ram: 0, temp: 0, net_rx: 0, net_tx: 0, disk_r: 0, disk_w: 0 };
+                const nodeCores = nodeData?.system?.cpu_cores || 1;
+                const cpuUsage = lastMetric.cpu ?? 0;
+                const ramUsage = lastMetric.ram ?? 0;
+                const ramTotalGb = ((nodeData?.system?.memory?.total || 0) / 1024**3).toFixed(1);
+                const ramUsedGb = ((nodeData?.system?.memory?.used || 0) / 1024**3).toFixed(1);
+                const isOnline = isLocalNode ? true : remoteServersData[srvId]?.status !== 'offline';
+                const primaryIface = nodeData?.network?.primary || { name: 'Ethernet', type: 'ethernet', speed: 1000 };
+                const isWifiNode = primaryIface.type === 'wifi';
+
+                return (
+                  <div key={srvId} className="node-performance-card">
+                    <div className="node-card-header">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <div style={{ background: isLocalNode ? 'rgba(59, 130, 246, 0.2)' : 'rgba(16, 185, 129, 0.2)', padding: '0.5rem', borderRadius: '8px' }}>
+                          <Server size={20} color={isLocalNode ? '#60a5fa' : '#34d399'} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#f8fafc' }}>{srv.name}</h3>
+                            <span style={{
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              padding: '0.15rem 0.45rem',
+                              borderRadius: '4px',
+                              background: isLocalNode ? 'rgba(59, 130, 246, 0.2)' : 'rgba(168, 85, 247, 0.2)',
+                              color: isLocalNode ? '#60a5fa' : '#c084fc',
+                              border: isLocalNode ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(168, 85, 247, 0.3)'
+                            }}>
+                              {isLocalNode ? 'Nodo Maestro' : 'Servidor Remoto'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'monospace' }}>
+                            {srv.url || primaryIface.ip || '127.0.0.1'} • {isWifiNode ? 'Wi-Fi' : 'Ethernet'} {primaryIface.speed ? `${primaryIface.speed} Mbps` : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: isOnline ? '#34d399' : '#ef4444' }}>
+                          {isOnline ? 'ONLINE' : 'OFFLINE'}
+                        </span>
+                        <div
+                          style={{
+                            width: '9px',
+                            height: '9px',
+                            borderRadius: '50%',
+                            background: isOnline ? '#10b981' : '#ef4444',
+                            boxShadow: isOnline ? '0 0 8px #10b981' : 'none'
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="node-gauge-group">
+                      <div className="node-gauge-box">
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>CPU ({nodeCores}C)</div>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 700, color: cpuUsage > 85 ? '#ef4444' : '#38bdf8', margin: '0.2rem 0' }}>
+                          {cpuUsage}%
+                        </div>
+                        <div className="btop-bar-container" style={{ height: '6px' }}>
+                          <div className="btop-bar-fill" style={{ width: `${Math.min(cpuUsage, 100)}%`, background: cpuUsage > 85 ? '#ef4444' : '#38bdf8' }} />
+                        </div>
+                      </div>
+
+                      <div className="node-gauge-box">
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>RAM ({ramTotalGb}G)</div>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 700, color: ramUsage > 85 ? '#ef4444' : '#34d399', margin: '0.2rem 0' }}>
+                          {ramUsage}%
+                        </div>
+                        <div className="btop-bar-container" style={{ height: '6px' }}>
+                          <div className="btop-bar-fill" style={{ width: `${Math.min(ramUsage, 100)}%`, background: ramUsage > 85 ? '#ef4444' : '#34d399' }} />
+                        </div>
+                      </div>
+
+                      <div className="node-gauge-box">
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>TEMPERATURA</div>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 700, color: (lastMetric.temp || 0) > 75 ? '#ef4444' : '#f59e0b', margin: '0.2rem 0' }}>
+                          {lastMetric.temp ? `${lastMetric.temp}°C` : 'Normal'}
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                          {nodeData?.system?.uptime ? `${Math.floor(nodeData.system.uptime / 3600)}h Uptime` : 'Activo'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ height: 140, background: 'rgba(0,0,0,0.25)', borderRadius: '8px', padding: '0.4rem 0.6rem' }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={nodeHistory}>
+                          <defs>
+                            <linearGradient id={`gradCpu-${srvId}`} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.35} />
+                              <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id={`gradRam-${srvId}`} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#34d399" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                          <XAxis dataKey="time" hide />
+                          <YAxis domain={[0, 100]} hide />
+                          <Tooltip content={<CustomTooltip />} />
+                          <Area type="monotone" dataKey="cpu" stroke="#38bdf8" strokeWidth={2} fillOpacity={1} fill={`url(#gradCpu-${srvId})`} name="CPU %" />
+                          <Area type="monotone" dataKey="ram" stroke="#34d399" strokeWidth={1.5} fillOpacity={1} fill={`url(#gradRam-${srvId})`} name="RAM %" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', color: '#94a3b8', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '0.5rem' }}>
+                      <span title={nodeData?.system?.cpu_model || 'CPU'}>
+                        {nodeData?.system?.cpu_model ? (nodeData.system.cpu_model.length > 25 ? nodeData.system.cpu_model.slice(0, 23) + '...' : nodeData.system.cpu_model) : 'Procesador Principal'}
+                      </span>
+                      <span>RAM: {ramUsedGb} GB / {ramTotalGb} GB</span>
+                      <button
+                        onClick={() => selectSingleServer(srvId)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#38bdf8',
+                          fontSize: '0.76rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          padding: 0
+                        }}
+                      >
+                        Ver Detallado &rarr;
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Gráfica Comparativa Consolidada de CPU entre Servidores */}
+            <div className="glass-panel" style={{ marginBottom: '1.5rem' }}>
+              <div className="panel-header" style={{ justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Activity size={20} color="#38bdf8" />
+                  <h2>Comparativa de Carga de CPU en Tiempo Real (Malla de Servidores)</h2>
+                </div>
+                <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem', color: '#94a3b8' }}>
+                  {selectedServers.map((srvId, idx) => {
+                    const srv = connectedServers.find(s => s.id === srvId) || { name: srvId };
+                    const colors = ['#38bdf8', '#10b981', '#a855f7', '#f59e0b', '#ec4899'];
+                    const color = colors[idx % colors.length];
+                    return (
+                      <div key={srvId} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: color }} />
+                        <span>{srv.name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ height: 260 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={history}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                    <XAxis dataKey="time" hide />
+                    <YAxis domain={[0, 100]} stroke="#64748b" fontSize={11} />
+                    <Tooltip content={<CustomTooltip />} />
+                    {selectedServers.map((srvId, idx) => {
+                      const srv = connectedServers.find(s => s.id === srvId) || { name: srvId };
+                      const colors = ['#38bdf8', '#10b981', '#a855f7', '#f59e0b', '#ec4899'];
+                      const color = colors[idx % colors.length];
+                      if (srvId === 'local') {
+                        return <Line key={srvId} type="monotone" dataKey="cpu" stroke={color} strokeWidth={2.5} dot={false} name={srv.name} />;
+                      }
+                      return (
+                        <Line
+                          key={srvId}
+                          type="monotone"
+                          data={remoteServersData[srvId]?.history || []}
+                          dataKey="cpu"
+                          stroke={color}
+                          strokeWidth={2}
+                          dot={false}
+                          name={srv.name}
+                        />
+                      );
+                    })}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </>
+        ) : (
+          /* 2. VISTA DE 1 SOLO SERVIDOR */
+          selectedServers[0] !== 'local' ? (
+            (() => {
+              const srvId = selectedServers[0];
+              const srv = connectedServers.find(s => s.id === srvId);
+              const srvData = remoteServersData[srvId]?.data || {};
+              const srvHistory = remoteServersData[srvId]?.history || [];
+              const srvCurrent = srvHistory[srvHistory.length - 1] || { cpu: 0, ram: 0, temp: 0, net_rx: 0, net_tx: 0, disk_r: 0, disk_w: 0 };
+              const srvCores = srvData.system?.cpu_cores || 1;
+              const isOnline = remoteServersData[srvId]?.status !== 'offline';
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  <div className="glass-panel" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <Server size={24} color="#10b981" />
+                      <div>
+                        <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#ffffff' }}>{srv?.name}</h2>
+                        <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontFamily: 'monospace' }}>{srv?.url}</span>
+                      </div>
+                    </div>
+                    <span style={{
+                      padding: '0.3rem 0.8rem',
+                      borderRadius: '6px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      background: isOnline ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                      color: isOnline ? '#34d399' : '#f87171',
+                      border: isOnline ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(239, 68, 68, 0.4)'
+                    }}>
+                      {isOnline ? 'CONECTADO Y OPERATIVO' : 'SIN CONEXIÓN'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: '1.5rem' }}>
+                    <div className="glass-panel">
+                      <div className="panel-header"><Cpu /><h2>Carga de CPU y Hardware Remoto</h2></div>
+                      <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1rem' }}>
+                        <div><div className="stat-label">CPU ({srvCores} Cores)</div><div className="stat-value" style={{ color: '#3b82f6', fontSize: '1.5rem' }}>{srvCurrent.cpu}%</div></div>
+                        <div><div className="stat-label">RAM</div><div className="stat-value" style={{ color: '#10b981', fontSize: '1.5rem' }}>{srvCurrent.ram}%</div></div>
+                        <div><div className="stat-label">Temperatura</div><div className="stat-value" style={{ color: '#f59e0b', fontSize: '1.5rem' }}>{srvCurrent.temp ? `${srvCurrent.temp}°C` : 'Normal'}</div></div>
+                      </div>
+                      <div style={{ height: 260 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={srvHistory}>
+                            <defs>
+                              <linearGradient id="colorCpuRemote" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
+                              <linearGradient id="colorRamRemote" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                            <XAxis dataKey="time" hide />
+                            <YAxis domain={[0, 100]} hide />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Area type="monotone" dataKey="cpu" stroke="#3b82f6" fillOpacity={1} fill="url(#colorCpuRemote)" name="CPU %" />
+                            <Area type="monotone" dataKey="ram" stroke="#10b981" fillOpacity={1} fill="url(#colorRamRemote)" name="RAM %" />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    <div className="glass-panel">
+                      <div className="panel-header"><Database /><h2>Memoria y Swap Remoto</h2></div>
+                      <div style={{ fontFamily: 'monospace', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                            <span>Uso RAM: {(((srvData.system?.memory?.used || 0) / 1024**3)).toFixed(1)} GiB</span>
+                            <span>Total: {(((srvData.system?.memory?.total || 0) / 1024**3)).toFixed(1)} GiB</span>
+                          </div>
+                          <div className="btop-bar-container" style={{ height: '16px' }}>
+                            <div className="btop-bar-fill" style={{ width: `${Math.min(srvCurrent.ram || 0, 100)}%`, background: '#10b981' }} />
+                          </div>
+                        </div>
+
+                        <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                          <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '0.5rem', fontWeight: 700 }}>PROPIEDADES DEL SISTEMA</div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', margin: '0.3rem 0' }}>
+                            <span style={{ color: '#64748b' }}>CPU Model:</span>
+                            <span style={{ color: '#ffffff' }}>{srvData.system?.cpu_model || 'Servidor ProLiant / Xeon'}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', margin: '0.3rem 0' }}>
+                            <span style={{ color: '#64748b' }}>Núcleos:</span>
+                            <span style={{ color: '#38bdf8' }}>{srvCores} Cores Físicos / Lógicos</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', margin: '0.3rem 0' }}>
+                            <span style={{ color: '#64748b' }}>Uptime:</span>
+                            <span style={{ color: '#34d399' }}>{Math.floor((srvData.system?.uptime || 0) / 3600)} Horas Activas</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()
+          ) : (
+            /* Vista del Host Local */
+            <>
+              <div className="widget-grid">
+                <div className="summary-widget">
+                  <div className="widget-icon"><Power size={24}/></div>
+                  <div className="widget-info">
+                    <span className="widget-title">Uptime</span>
+                    <span className="widget-value">{uptimeDays}d {uptimeHours}h</span>
+                  </div>
+                </div>
+                <div className="summary-widget">
+                  <div className="widget-icon"><Database size={24}/></div>
+                  <div className="widget-info">
+                    <span className="widget-title">Docker</span>
+                    <span className="widget-value" style={{color: dockerUp > 0 ? 'var(--success)' : ''}}>{dockerUp} / {dockerTotal} UP</span>
+                  </div>
+                </div>
+                {isKlipperReady && (
+                  <div className="summary-widget">
+                    <div className="widget-icon"><Printer size={24}/></div>
+                    <div className="widget-info">
+                      <span className="widget-title">3D Printer</span>
+                      <span className="widget-value" style={{color: isKlipperReady ? 'var(--success)' : 'var(--danger)'}}>{klippyStatus}</span>
+                    </div>
+                  </div>
+                )}
+                <div className="summary-widget" id="tour-tailscale-widget">
+                  <div className="widget-icon"><Shield size={24}/></div>
+                  <div className="widget-info">
+                    <span className="widget-title">VPN Tailscale</span>
+                    <span className="widget-value" style={{color: 'var(--accent)'}}>{tsOnline} PEERS</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '1.5rem' }}>
+                <div className="glass-panel" id="tour-system-load">
+                  <div className="panel-header"><Cpu /><h2>System Load & Hardware Telemetry</h2></div>
+                  <div style={{display: 'flex', flexWrap: 'wrap', gap: '1.5rem', marginBottom: '1rem'}}>
+                    <div><div className="stat-label">CPU ({cores} Cores)</div><div className="stat-value" style={{color: '#3b82f6', fontSize: '1.5rem'}}>{current.cpu}%</div></div>
+                    <div><div className="stat-label">RAM</div><div className="stat-value" style={{color: '#10b981', fontSize: '1.5rem'}}>{current.ram}%</div></div>
+                    <div><div className="stat-label">CPU Temp</div><div className="stat-value" style={{color: '#f59e0b', fontSize: '1.5rem'}}>{current.temp}°C</div></div>
+                    {data.system?.gpu?.has_gpu && (
+                      <div>
+                        <div className="stat-label">GPU ({data.system.gpu.model ? (data.system.gpu.model.length > 20 ? data.system.gpu.model.slice(0, 18) + '...' : data.system.gpu.model) : 'GPU'})</div>
+                        <div className="stat-value" style={{color: '#a855f7', fontSize: '1.5rem'}}>
+                          {current.gpu ?? data.system.gpu.usage ?? 0}%
+                        </div>
+                      </div>
+                    )}
+                    {data.system?.gpu?.has_gpu && (current.gpu_temp || data.system.gpu.temp) > 0 && (
+                      <div>
+                        <div className="stat-label">GPU Temp</div>
+                        <div className="stat-value" style={{color: '#ec4899', fontSize: '1.5rem'}}>
+                          {current.gpu_temp || data.system.gpu.temp}°C
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ height: 280 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={history}>
+                        <defs>
+                          <linearGradient id="colorCpu" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
+                          <linearGradient id="colorRam" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
+                          <linearGradient id="colorGpu" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/><stop offset="95%" stopColor="#a855f7" stopOpacity={0}/></linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                        <XAxis dataKey="time" hide />
+                        <YAxis hide />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Area type="monotone" dataKey="cpu" stroke="#3b82f6" fillOpacity={1} fill="url(#colorCpu)" name="CPU %" />
+                        <Area type="monotone" dataKey="ram" stroke="#10b981" fillOpacity={1} fill="url(#colorRam)" name="RAM %" />
+                        {data.system?.gpu?.has_gpu && (
+                          <Area type="monotone" dataKey="gpu" stroke="#a855f7" fillOpacity={1} fill="url(#colorGpu)" name="GPU %" />
+                        )}
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Hardware Specifications Badges */}
+                  <div id="tour-hardware-specs" style={{
+                    display: 'grid',
+                    gridTemplateColumns: data.system?.gpu?.has_gpu ? 'repeat(auto-fit, minmax(180px, 1fr))' : 'repeat(auto-fit, minmax(220px, 1fr))',
+                    gap: '0.85rem',
+                    marginTop: '1.25rem',
+                    paddingTop: '1rem',
+                    borderTop: '1px solid rgba(255, 255, 255, 0.08)'
+                  }}>
+                    {/* CPU Specs */}
+                    <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', color: '#3b82f6', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
+                        <Cpu size={14} /> PROCESADOR (CPU)
+                      </div>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={data.system?.cpu_model || 'Intel/AMD Processor'}>
+                        {data.system?.cpu_model || 'Procesador Principal'}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                        <span>{cores} Núcleos</span> • <span>{data.system?.cpu_freqs?.[0] ? `${data.system.cpu_freqs[0]} MHz` : 'Frecuencia Dinámica'}</span>
+                      </div>
+                    </div>
+
+                    {/* RAM Specs */}
+                    <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', color: '#10b981', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
+                        <Database size={14} /> MEMORIA (RAM)
+                      </div>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
+                        {((data.system?.memory?.total || 0) / 1024**3).toFixed(1)} GB Total
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                        <span style={{ color: '#10b981' }}>{((data.system?.memory?.used || 0) / 1024**3).toFixed(1)} GB en uso</span> • <span>{((data.system?.memory?.available || 0) / 1024**3).toFixed(1)} GB libres</span>
+                      </div>
+                    </div>
+
+                    {/* GPU Specs */}
+                    {data.system?.gpu?.has_gpu && (
+                      <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', color: '#a855f7', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em' }}>
+                          <Zap size={14} /> ACELERADOR (GPU)
+                        </div>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={data.system.gpu.model}>
+                          {data.system.gpu.model || 'GPU Dedicada'}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                          <span>{data.system.gpu.vram_total_mb ? `${(data.system.gpu.vram_total_mb / 1024).toFixed(1)} GB VRAM` : 'Aceleración Directa'}</span>
+                          {data.system.gpu.driver ? <span> • Driver {data.system.gpu.driver}</span> : null}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="glass-panel">
+                  <div className="panel-header"><Network /><h2>Network I/O</h2></div>
+                  <div style={{display: 'flex', gap: '2rem', marginBottom: '1rem'}}>
+                    <div><div className="stat-label">Download</div><div className="stat-value" style={{color: '#8b5cf6', fontSize: '1.5rem'}}>{current.net_rx} MB/s</div></div>
+                    <div><div className="stat-label">Upload</div><div className="stat-value" style={{color: '#ec4899', fontSize: '1.5rem'}}>{current.net_tx} MB/s</div></div>
+                  </div>
+                  <div style={{ height: 300 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={history}>
+                        <defs>
+                          <linearGradient id="colorRx" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/><stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/></linearGradient>
+                          <linearGradient id="colorTx" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ec4899" stopOpacity={0.3}/><stop offset="95%" stopColor="#ec4899" stopOpacity={0}/></linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                        <XAxis dataKey="time" hide />
+                        <YAxis hide />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Area type="monotone" dataKey="net_rx" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorRx)" name="Down (MB/s)" />
+                        <Area type="monotone" dataKey="net_tx" stroke="#ec4899" fillOpacity={1} fill="url(#colorTx)" name="Up (MB/s)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className="glass-panel">
+                  <div className="panel-header"><HardDrive /><h2>Storage I/O</h2></div>
+                  <div style={{display: 'flex', gap: '2rem', marginBottom: '1rem'}}>
+                    <div><div className="stat-label">Read</div><div className="stat-value" style={{color: '#06b6d4', fontSize: '1.5rem'}}>{current.disk_r} MB/s</div></div>
+                    <div><div className="stat-label">Write</div><div className="stat-value" style={{color: '#f43f5e', fontSize: '1.5rem'}}>{current.disk_w} MB/s</div></div>
+                    <div style={{marginLeft: 'auto', textAlign:'right'}}><div className="stat-label">Used Space</div><div className="stat-value" style={{fontSize: '1.1rem'}}>{((data.system.disks && data.system.disks[0]?.used)/1024**3 || 0).toFixed(1)} GB / {((data.system.disks && data.system.disks[0]?.total)/1024**3 || 0).toFixed(0)} GB</div></div>
+                  </div>
+                  <div style={{ height: 300 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={history}>
+                        <defs>
+                          <linearGradient id="colorR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3}/><stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient>
+                          <linearGradient id="colorW" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3}/><stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/></linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                        <XAxis dataKey="time" hide />
+                        <YAxis hide />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Area type="step" dataKey="disk_r" stroke="#06b6d4" fillOpacity={1} fill="url(#colorR)" name="Read (MB/s)" />
+                        <Area type="step" dataKey="disk_w" stroke="#f43f5e" fillOpacity={1} fill="url(#colorW)" name="Write (MB/s)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                
+                <div className="glass-panel">
+                  <div className="panel-header"><Activity /><h2>Load Average ({cores} Cores)</h2></div>
+                  <div style={{display: 'flex', gap: '2rem', justifyContent:'center', marginTop:'2rem'}}>
+                    <div style={{textAlign:'center'}}>
+                      <div className="stat-value" style={{fontSize: '2rem', color: data.system.loadavg[0] > cores ? 'var(--danger)' : 'var(--text-primary)'}}>{data.system.loadavg[0].toFixed(2)}</div>
+                      <div className="stat-label">1 Min</div>
+                    </div>
+                    <div style={{textAlign:'center'}}>
+                      <div className="stat-value" style={{fontSize: '2rem', color: data.system.loadavg[1] > cores ? 'var(--warning)' : 'var(--text-primary)'}}>{data.system.loadavg[1].toFixed(2)}</div>
+                      <div className="stat-label">5 Min</div>
+                    </div>
+                    <div style={{textAlign:'center'}}>
+                      <div className="stat-value" style={{fontSize: '2rem', color: data.system.loadavg[2] > cores ? 'var(--warning)' : 'var(--text-primary)'}}>{data.system.loadavg[2].toFixed(2)}</div>
+                      <div className="stat-label">15 Min</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="glass-panel">
+                  <div className="panel-header"><Database /><h2>Memory & Swap</h2></div>
+                  <div style={{fontFamily: 'monospace', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                    <div>
+                      <div style={{display:'flex', justifyContent:'space-between', marginBottom:'0.2rem'}}>
+                        <span>Used: {(data.system.memory.used/1024**3).toFixed(1)} GiB</span>
+                        <span>Total: {(data.system.memory.total/1024**3).toFixed(1)} GiB</span>
+                      </div>
+                      <div className="btop-bar-container" style={{height:'16px'}}>
+                        <div className="btop-bar-fill" style={{width: `${(data.system.memory.used/data.system.memory.total)*100}%`, background: '#10b981'}}></div>
+                      </div>
+                      <div style={{display:'flex', justifyContent:'space-between', marginTop:'0.2rem', color:'var(--text-secondary)'}}>
+                        <span>Avail: {(data.system.memory.available/1024**3).toFixed(1)} GiB</span>
+                        <span>Cached: {(data.system.memory.cached/1024**3).toFixed(1)} GiB</span>
+                        <span>Free: {(data.system.memory.free/1024**3).toFixed(1)} GiB</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{display:'flex', justifyContent:'space-between', marginBottom:'0.2rem'}}>
+                        <span>Swap Used: {((data.system.memory.swap_total - data.system.memory.swap_free)/1024**3).toFixed(1)} GiB</span>
+                        <span>Total: {(data.system.memory.swap_total/1024**3).toFixed(1)} GiB</span>
+                      </div>
+                      <div className="btop-bar-container" style={{height:'16px'}}>
+                        <div className="btop-bar-fill" style={{width: `${data.system.memory.swap_total > 0 ? ((data.system.memory.swap_total - data.system.memory.swap_free)/data.system.memory.swap_total)*100 : 0}%`, background: '#f59e0b'}}></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="glass-panel">
+                  <div className="panel-header"><HardDrive /><h2>Disks & Mounts</h2></div>
+                  <div style={{fontFamily: 'monospace', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '1rem', overflowY:'auto', maxHeight:'300px'}}>
+                    {data.system.disks?.map((d, i) => {
+                       const usedPct = (d.used / d.total) * 100;
+                       const color = usedPct > 90 ? '#ef4444' : usedPct > 70 ? '#f59e0b' : '#3b82f6';
+                       return (
+                         <div key={i}>
+                           <div style={{display:'flex', justifyContent:'space-between', marginBottom:'0.2rem'}}>
+                             <span><span style={{color:'var(--text-secondary)'}}>{d.device}</span> <span style={{fontWeight:'bold'}}>{d.mountpoint}</span></span>
+                             <span>{usedPct.toFixed(0)}% ({(d.free/1024**3).toFixed(1)}G free)</span>
+                           </div>
+                           <div className="btop-bar-container" style={{height:'10px'}}>
+                             <div className="btop-bar-fill" style={{width: `${usedPct}%`, background: color}}></div>
+                           </div>
+                         </div>
+                       );
+                    })}
+                  </div>
+                </div>
+
+                <div className="glass-panel">
+                  <div className="panel-header"><Activity /><h2>S.M.A.R.T. Health</h2></div>
+                  <table className="os-table">
+                    <thead><tr><th>Device</th><th>Model</th><th>Health</th><th>Temp</th></tr></thead>
+                    <tbody>
+                      {data.system.smart?.map((d, i) => (
+                        <tr key={i}>
+                          <td style={{fontFamily: 'monospace', color: 'var(--text-secondary)'}}>{d.device}</td>
+                          <td>{d.model}</td>
+                          <td style={{color: d.health === 'PASSED' ? 'var(--success)' : 'var(--danger)', fontWeight: 'bold'}}>{d.health}</td>
+                          <td style={{color: 'var(--warning)'}}>{d.temp}°C</td>
+                        </tr>
+                      ))}
+                      {(!data.system.smart || data.system.smart.length === 0) && (
+                        <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No SMART data available</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="glass-panel">
+                  <div className="panel-header"><User /><h2>Active Users</h2></div>
+                  <table className="os-table">
+                    <thead><tr><th>User</th><th>Terminal</th><th>Login Time</th><th>IP</th></tr></thead>
+                    <tbody>
+                      {data.system.active_users?.map((u, i) => (
+                        <tr key={i}>
+                          <td style={{fontWeight: 'bold', color: 'var(--accent)'}}>{u.user}</td>
+                          <td>{u.terminal}</td>
+                          <td>{u.login_time}</td>
+                          <td style={{fontFamily: 'monospace'}}>{u.ip}</td>
+                        </tr>
+                      ))}
+                      {(!data.system.active_users || data.system.active_users.length === 0) && (
+                        <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No active users</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="glass-panel">
+                  <div className="panel-header"><Cpu /><h2>CPU Frequencies</h2></div>
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1rem'}}>
+                    {data.system.cpu_freqs?.map((freq, i) => (
+                      <div key={i} style={{background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '8px', textAlign: 'center'}}>
+                        <div style={{color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.25rem'}}>Core {i}</div>
+                        <div style={{color: 'var(--accent)', fontFamily: 'monospace', fontSize: '1.2rem'}}>{freq.toFixed(0)} MHz</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )
+        )}
+      </>
+    );
   };
 
   const renderPrinter = () => {
@@ -805,9 +1466,8 @@ function App() {
       return (
         <div className="glass-panel" style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh'}}>
           <Power size={64} color="var(--text-secondary)" style={{marginBottom: '1rem'}} />
-          <h2 style={{color: 'var(--text-secondary)'}}>Klipper is Offline</h2>
-          <p style={{color: 'var(--text-secondary)'}}>Turn on the 3D Printer to access the dashboard.</p>
-          <div className="stat-value" style={{marginTop: '1rem', color: 'var(--danger)'}}>State: {data.moonraker?.klippy_state?.toUpperCase() || 'UNKNOWN'}</div>
+          <h2 style={{color: 'var(--text-secondary)'}}>Klipper No Detectado / No Instalado</h2>
+          <p style={{color: 'var(--text-secondary)'}}>Esta sección solo está disponible si Klipper y Moonraker fueron activados durante la instalación.</p>
         </div>
       );
     }
@@ -1569,7 +2229,7 @@ function App() {
 
         {/* 1. Vista de Topología Visual Interactiva (Nodos, Sondas, Señales y Recursos) */}
         {(networkSubTab === 'topology' || networkSubTab === 'all') && (
-          <NetworkTopologyView data={data} handleAction={handleAction} />
+          <NetworkTopologyView data={data} handleAction={handleAction} connectedServers={connectedServers} />
         )}
 
         {/* 2. Gestor Tailscale VPN */}
@@ -1709,9 +2369,86 @@ function App() {
   };
 
   const renderLogs = () => {
+    const isVistaCompletaLogs = selectedLogServers.length === connectedServers.length && connectedServers.length > 1;
+
+    // Consolidar logs locales y remotos
+    const combinedLogEntries = [];
+
+    // Logs locales
+    if (wsLogs && wsLogs.length > 0) {
+      wsLogs.forEach((line, idx) => {
+        combinedLogEntries.push({
+          id: `local-${idx}`,
+          serverId: 'local',
+          serverName: 'LOCAL',
+          text: line,
+          colorBadge: '#60a5fa'
+        });
+      });
+    }
+
+    // Logs de servidores remotos vinculados
+    Object.entries(remoteLogs).forEach(([srvId, lines]) => {
+      const srvObj = connectedServers.find(s => s.id === srvId) || { name: srvId };
+      const colors = ['#34d399', '#a855f7', '#f59e0b', '#ec4899'];
+      const srvIdx = connectedServers.findIndex(s => s.id === srvId);
+      const colorBadge = colors[srvIdx % colors.length] || '#34d399';
+
+      lines.forEach((line, idx) => {
+        combinedLogEntries.push({
+          id: `${srvId}-${idx}`,
+          serverId: srvId,
+          serverName: srvObj.name.toUpperCase(),
+          text: line,
+          colorBadge
+        });
+      });
+    });
+
+    // Filtrar por servidores seleccionados por el usuario
+    const visibleEntries = combinedLogEntries.filter(entry => selectedLogServers.includes(entry.serverId));
+
     return (
       <div className="glass-panel" style={{height: '85vh', display: 'flex', flexDirection: 'column'}}>
-        <div className="panel-header" style={{marginBottom: '0.5rem'}}><Terminal size={24}/><h2>System Logs (Live Stream)</h2></div>
+        <div className="panel-header" style={{marginBottom: '0.75rem', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem'}}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Terminal size={24}/>
+            <h2>System Logs (Live Stream Multi-Servidor)</h2>
+          </div>
+
+          {/* Filtros de origen de logs por servidor */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600 }}>Origen:</span>
+
+            {connectedServers.length > 1 && (
+              <button
+                className={`server-filter-chip ${isVistaCompletaLogs ? 'vista-completa active' : ''}`}
+                onClick={selectAllLogServers}
+                style={{ padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}
+                title="Ver logs consolidados de todos los servidores en una sola vista"
+              >
+                <Layers size={13} /> Todos ({connectedServers.length})
+              </button>
+            )}
+
+            {connectedServers.map(srv => {
+              const isSelected = selectedLogServers.includes(srv.id);
+              return (
+                <button
+                  key={srv.id}
+                  className={`server-filter-chip ${isSelected ? 'active' : ''}`}
+                  onClick={() => toggleLogServerSelection(srv.id)}
+                  style={{ padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}
+                  title={`Alternar logs de ${srv.name}`}
+                >
+                  {isSelected && <Check size={12} color="#60a5fa" />}
+                  <span>{srv.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div style={{
           flex: 1,
           background: 'rgba(0,0,0,0.5)',
@@ -1726,16 +2463,33 @@ function App() {
           flexDirection: 'column-reverse'
         }}>
           <div>
-            {wsLogs.length > 0 ? wsLogs.map((line, i) => {
+            {visibleEntries.length > 0 ? visibleEntries.map((entry) => {
               let color = 'inherit';
               let fontWeight = 'normal';
-              const l = line.toLowerCase();
+              const l = entry.text.toLowerCase();
               if (l.includes('crit') || l.includes('fatal')) { color = '#ef4444'; fontWeight = 'bold'; }
               else if (l.includes('error') || l.includes('fail')) color = '#f97316';
               else if (l.includes('warn')) color = '#eab308';
-              else if (l.includes('info') || l.includes('success')) color = '#3b82f6';
-              return <div key={i} style={{color, fontWeight, paddingBottom: '0.2rem', borderBottom: '1px solid rgba(255,255,255,0.05)'}}>{line}</div>;
-            }) : <div style={{color:'var(--text-secondary)'}}>Listening for logs...</div>}
+              else if (l.includes('info') || l.includes('success')) color = '#38bdf8';
+
+              return (
+                <div key={entry.id} style={{color, fontWeight, paddingBottom: '0.25rem', marginBottom: '0.25rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'flex-start', gap: '0.5rem'}}>
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '0.1rem 0.4rem',
+                    borderRadius: '4px',
+                    background: `${entry.colorBadge}20`,
+                    color: entry.colorBadge,
+                    border: `1px solid ${entry.colorBadge}50`,
+                    whiteSpace: 'nowrap'
+                  }}>
+                    [{entry.serverName}]
+                  </span>
+                  <span style={{ flex: 1 }}>{entry.text}</span>
+                </div>
+              );
+            }) : <div style={{color:'var(--text-secondary)'}}>Esperando flujo de registros de los servidores seleccionados...</div>}
           </div>
         </div>
       </div>
@@ -1926,10 +2680,158 @@ function App() {
     );
   };
 
+  const renderServerModal = () => (
+    <div className="server-modal-backdrop" onClick={() => setServerModalOpen(false)}>
+      <div className="server-modal-box" onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '0.85rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <Server size={22} color="#3b82f6" />
+            <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#ffffff' }}>Gestión de Servidores y Red Mesh</h3>
+          </div>
+          <button
+            onClick={() => setServerModalOpen(false)}
+            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Servidores Actuales */}
+        <div>
+          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '0.6rem' }}>
+            Servidores Conectados Actualmente ({connectedServers.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {connectedServers.map(srv => {
+              const isOnline = srv.isLocal ? true : remoteServersData[srv.id]?.status !== 'offline';
+              return (
+                <div
+                  key={srv.id}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isOnline ? '#10b981' : '#ef4444' }} />
+                    <div>
+                      <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.9rem' }}>{srv.name}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'monospace' }}>
+                        {srv.isLocal ? '127.0.0.1 (Nodo Local Maestro)' : srv.url}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    {srv.isLocal ? (
+                      <span style={{ fontSize: '0.75rem', color: '#60a5fa', fontWeight: 700 }}>PRINCIPAL</span>
+                    ) : (
+                      <button
+                        onClick={() => handleRemoveServer(srv.id)}
+                        className="btn btn-danger"
+                        style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
+                      >
+                        Desconectar
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Formulario para agregar nuevo servidor */}
+        <form onSubmit={handleAddServer} style={{ background: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#60a5fa' }}>
+            + Vincular Nuevo Servidor / Nodo
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Nombre del Servidor</label>
+            <input
+              type="text"
+              placeholder="ej. Servidor HP ProLiant, Nodo GPU Ubuntu..."
+              className="os-input"
+              value={newServerForm.name}
+              onChange={e => setNewServerForm(prev => ({ ...prev, name: e.target.value }))}
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Dirección URL / IP y Puerto</label>
+            <input
+              type="text"
+              placeholder="ej. http://192.168.1.150:8001 o http://labsentinel.tailc83bd7.ts.net:8001"
+              className="os-input"
+              value={newServerForm.url}
+              onChange={e => setNewServerForm(prev => ({ ...prev, url: e.target.value }))}
+              required
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Token de Autenticación / Mesh Key (Opcional)</label>
+            <input
+              type="password"
+              placeholder="sntl_live_... (token generado por el instalador)"
+              className="os-input"
+              value={newServerForm.token}
+              onChange={e => setNewServerForm(prev => ({ ...prev, token: e.target.value }))}
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          {serverTestStatus && (
+            <div style={{
+              padding: '0.5rem 0.75rem',
+              borderRadius: '6px',
+              fontSize: '0.78rem',
+              background: serverTestStatus.ok ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+              color: serverTestStatus.ok ? '#34d399' : '#f87171',
+              border: serverTestStatus.ok ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
+            }}>
+              {serverTestStatus.msg}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.25rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleTestServerConnection}
+              disabled={serverTestLoading || !newServerForm.url.trim()}
+              style={{ flex: 1, padding: '0.5rem' }}
+            >
+              {serverTestLoading ? 'Probando...' : 'Probar Conexión'}
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!newServerForm.url.trim()}
+              style={{ flex: 1, padding: '0.5rem' }}
+            >
+              Guardar y Conectar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+
+  const isKlipperReady = data?.moonraker?.klippy_state === 'ready';
+
   const navItems = [
     { id: 'sentinel', icon: <Bot size={20} color="#00f0ff"/>, label: 'SENTINEL AI', isSentinel: true },
     { id: 'overview', icon: <LayoutDashboard size={20}/>, label: 'Dashboard' },
-    { id: 'printer', icon: <Printer size={20}/>, label: '3D Printer' },
+    ...(isKlipperReady ? [{ id: 'printer', icon: <Printer size={20}/>, label: '3D Printer' }] : []),
     { id: 'docker', icon: <Database size={20}/>, label: 'Containers' },
     { id: 'processes', icon: <Activity size={20}/>, label: 'System & Services' },
     { id: 'network', icon: <Network size={20}/>, label: 'Network & VPN' },
@@ -1942,6 +2844,9 @@ function App() {
 
   return (
     <div className="os-container">
+      {/* Modal de Conexión y Gestión de Servidores */}
+      {serverModalOpen && renderServerModal()}
+
       {/* Toast Notifications */}
       <div className="toast-container">
         {notifications.map(n => (

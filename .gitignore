@@ -94,3 +94,4 @@ verify_*.py
 build_llama_server.py
 update_backend_8080.py
 restart_and_test.py
+scratch/

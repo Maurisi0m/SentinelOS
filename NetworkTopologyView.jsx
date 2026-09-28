@@ -3,10 +3,10 @@ import {
   Globe, Shield, Server, Laptop, Smartphone, Printer, Database,
   Cpu, Activity, Zap, RefreshCw, Send, Radio, Terminal, Wifi,
   CheckCircle2, AlertCircle, X, Search, Filter, Layers, HardDrive,
-  Router, Play, Square, ExternalLink, ArrowRight
+  Router, Play, Square, ExternalLink, ArrowRight, Cable
 } from 'lucide-react';
 
-export default function NetworkTopologyView({ data, handleAction }) {
+export default function NetworkTopologyView({ data, handleAction, connectedServers = [] }) {
   const [selectedNode, setSelectedNode] = useState(null);
   const [filterType, setFilterType] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -16,69 +16,38 @@ export default function NetworkTopologyView({ data, handleAction }) {
   const [signalSending, setSignalSending] = useState(false);
   const [signalStatus, setSignalStatus] = useState(null);
 
-  // 1. Extraer Nodos del Ecosistema SentinelOS
+  // 1. Extraer Topología Real del Ecosistema SentinelOS
   const topologyData = useMemo(() => {
     const nodes = [];
     const links = [];
 
-    // Nodo 1: WAN / Internet Gateway
-    nodes.push({
-      id: 'node-internet',
-      name: 'Internet / WAN Gateway',
-      type: 'gateway',
-      category: 'cloud',
-      ip: 'WAN Public Gateway',
-      status: 'online',
-      latency: 12,
-      icon: 'globe',
-      details: {
-        role: 'Puerta de Enlace Global WAN',
-        uptime: '99.98% (Últimos 30 días)',
-        traffic24h: '4.8 GB Tx / 18.2 GB Rx',
-        firewall: 'Filtro perimetral activo'
-      },
-      x: 480,
-      y: 70
-    });
+    // Detectar Interfaz de Red Primaria Real del Host
+    const primaryNet = data?.network?.primary || {
+      name: 'Ethernet',
+      type: 'ethernet',
+      speed: 1000,
+      ip: '127.0.0.1',
+      mac: ''
+    };
+    const isWifi = primaryNet.type === 'wifi';
+    const ifaceSpeed = primaryNet.speed ? `${primaryNet.speed} Mbps` : 'Activa';
 
-    // Nodo 2: Firewall / VPN Gateway (Tailscale Zero-Trust)
-    const tsOnline = Boolean(data?.tailscale?.BackendState === 'Running' || data?.tailscale?.Self);
-    nodes.push({
-      id: 'node-firewall',
-      name: 'Firewall & VPN Gateway',
-      type: 'firewall',
-      category: 'security',
-      ip: data?.tailscale?.Self?.TailscaleIPs?.[0] || '100.x.x.x',
-      status: tsOnline ? 'online' : 'idle',
-      latency: 8,
-      icon: 'shield',
-      details: {
-        role: 'Cifrado WireGuard & Túnel MagicDNS',
-        firewallEngine: 'Windows Defender / UFW Netsh Rules',
-        tailnet: data?.tailscale?.CurrentTailnet?.MagicDNSSuffix || 'Tailnet Active',
-        uptime24h: '100% Sin caídas registradas'
-      },
-      x: 480,
-      y: 190
-    });
-    links.push({ source: 'node-internet', target: 'node-firewall', label: 'Túnel TLS 1.3' });
-
-    // Nodo 3: SentinelOS Core Master (Host Actual)
+    // Nodo Central 1: Host Local / Nodo Maestro
     const cpuModel = data?.system?.cpu_model || 'Intel/AMD Processor';
     const gpuModel = data?.system?.gpu?.has_gpu ? data.system.gpu.model : 'Acelerador Integrado';
     const ramTotalGb = ((data?.system?.memory?.total || 0) / 1024**3).toFixed(1);
     const ramUsedGb = ((data?.system?.memory?.used || 0) / 1024**3).toFixed(1);
-    const memTotalGb = ramTotalGb;
-    const memUsedGb = ramUsedGb;
+
     nodes.push({
       id: 'node-core-master',
-      name: 'SentinelOS Core Master (Host)',
+      name: data?.system?.node_name || 'Nodo Maestro (Host)',
       type: 'master',
       category: 'server',
-      ip: '127.0.0.1 / 8001',
+      ip: primaryNet.ip || '127.0.0.1',
+      mac: primaryNet.mac || '',
       status: 'online',
-      latency: 0.5,
-      icon: 'server',
+      latency: 0.2,
+      icon: isWifi ? 'wifi' : 'server',
       isMaster: true,
       resources: {
         cpuModel,
@@ -95,66 +64,155 @@ export default function NetworkTopologyView({ data, handleAction }) {
       },
       details: {
         role: 'Núcleo Central de Gobernanza y Telemetría',
-        os: 'Windows 11 / Linux Multiplatform Core',
-        lastDayAvailability: '100% Operativo',
-        packetsProcessed: '248,910 paquetes en 24h'
+        interfazFisica: `${primaryNet.name} (${ifaceSpeed})`,
+        tipoConexion: isWifi ? 'Inalámbrica Wi-Fi 802.11' : 'Cableada Ethernet Gigabit',
+        direccionMAC: primaryNet.mac || 'N/A',
+        uptime: `${Math.floor((data?.system?.uptime || 0) / 3600)} horas activas`
       },
       x: 480,
-      y: 330
+      y: 280
     });
-    links.push({ source: 'node-firewall', target: 'node-core-master', label: 'Bus ASGI 8001' });
 
-    // Nodo 4: LAN Gigabit Switch (Puerta de interconexión local)
-    nodes.push({
-      id: 'node-lan-switch',
-      name: 'LAN Gigabit Switch',
-      type: 'switch',
-      category: 'network',
-      ip: '192.168.1.1 (Gateway)',
-      status: 'online',
-      latency: 2,
-      icon: 'router',
-      details: {
-        role: 'Conmutador Ethernet Local',
-        speed: '1000 Mbps Full Duplex',
-        broadcastDomain: '255.255.255.0'
-      },
-      x: 230,
-      y: 330
+    // 2. Servidores Remotos Conectados Permanentemente
+    const remoteServers = (connectedServers || []).filter(s => !s.isLocal);
+    remoteServers.forEach((srv, idx) => {
+      const srvId = `node-srv-${srv.id || idx}`;
+      const isTs = srv.url?.includes('100.') || srv.url?.includes('.ts.net');
+      const isLan = srv.url?.includes('192.168.') || srv.url?.includes('10.') || srv.url?.includes('172.');
+      const connLabel = isTs ? 'Túnel WireGuard VPN' : (isLan ? 'Enlace Directo LAN' : 'Enlace Seguro WAN');
+
+      const yOffset = 180 + (idx * 110);
+      nodes.push({
+        id: srvId,
+        name: srv.name || `Servidor Remoto ${idx + 1}`,
+        type: 'remote_server',
+        category: 'server',
+        ip: srv.url || srv.ip || 'Host Remoto',
+        status: srv.status || 'online',
+        latency: srv.latency || (isTs ? 14 : 4),
+        icon: isTs ? 'shield' : 'server',
+        details: {
+          role: 'Servidor Satélite Vinculado',
+          tipoConexion: connLabel,
+          endpoint: srv.url || 'http://...',
+          estadoAuth: srv.token ? 'Token de Acceso Verificado' : 'Sin Token'
+        },
+        x: 760,
+        y: yOffset
+      });
+
+      links.push({
+        source: 'node-core-master',
+        target: srvId,
+        label: isTs ? 'WireGuard Mesh' : 'Ethernet / LAN'
+      });
     });
-    links.push({ source: 'node-core-master', target: 'node-lan-switch', label: 'Gigabit LAN' });
 
-    // Nodo 5: Impresora 3D (Klipper / Moonraker)
-    const isKlipperReady = data?.moonraker?.klippy_state === 'ready';
-    const klippyStatus = isKlipperReady ? (data?.printer?.print_stats?.state?.toUpperCase() || 'IDLE') : 'OFFLINE';
-    nodes.push({
-      id: 'node-klipper',
-      name: 'Klipper 3D Print Lab',
-      type: 'printer',
-      category: 'hardware',
-      ip: 'Puerto 7125 / USB Serial',
-      status: isKlipperReady ? 'online' : 'idle',
-      latency: 4,
-      icon: 'printer',
-      resources: {
-        klippyState: data?.moonraker?.klippy_state || 'disconnected',
-        printState: klippyStatus,
-        extruderTemp: data?.printer?.extruder?.temperature || 0,
-        bedTemp: data?.printer?.heater_bed?.temperature || 0,
-      },
-      details: {
-        role: 'Fabricación Aditiva y Control G-Code',
-        connection: 'Moonraker API Webhooks',
-        lastDayJobs: '3 impresiones ejecutadas hoy'
-      },
-      x: 740,
-      y: 240
+    // 3. Red Mesh Tailscale Zero-Trust (Solo si está activo)
+    const tsRunning = Boolean(data?.tailscale?.BackendState === 'Running' || data?.tailscale?.Self);
+    if (tsRunning) {
+      const selfTs = data?.tailscale?.Self;
+      const tsIp = selfTs?.TailscaleIPs?.[0] || '100.x.x.x';
+
+      nodes.push({
+        id: 'node-tailscale-gateway',
+        name: 'Túnel Tailscale Zero-Trust',
+        type: 'firewall',
+        category: 'vpn',
+        ip: tsIp,
+        status: 'online',
+        latency: 6,
+        icon: 'shield',
+        details: {
+          role: 'Malla VPN Cifrada WireGuard',
+          tailnet: data?.tailscale?.CurrentTailnet?.MagicDNSSuffix || 'Tailnet Activo',
+          magicDNS: selfTs?.DNSName || 'DNS Seguro',
+          estadoBackend: data?.tailscale?.BackendState || 'Running'
+        },
+        x: 480,
+        y: 100
+      });
+      links.push({
+        source: 'node-core-master',
+        target: 'node-tailscale-gateway',
+        label: 'Túnel Seguro WireGuard'
+      });
+
+      // Peers de Tailscale Reales (Máquinas del usuario)
+      const peers = data?.tailscale?.Peer ? Object.values(data.tailscale.Peer) : [];
+      peers.slice(0, 3).forEach((p, idx) => {
+        if (!p) return;
+        const pId = `node-ts-peer-${idx}`;
+        const isOnline = Boolean(p.Online);
+        const pIp = p.TailscaleIPs?.[0] || '100.x.x.x';
+        const dType = (p.OS || '').toLowerCase();
+        const isMobile = dType.includes('ios') || dType.includes('android');
+
+        nodes.push({
+          id: pId,
+          name: p.HostName || `Cliente ${p.OS || 'VPN'}`,
+          type: isMobile ? 'smartphone' : 'laptop',
+          category: 'vpn',
+          ip: pIp,
+          status: isOnline ? 'online' : 'offline',
+          latency: isOnline ? 18 + (idx * 6) : 999,
+          icon: isMobile ? 'smartphone' : 'laptop',
+          details: {
+            role: 'Dispositivo Vinculado en Malla',
+            sistemaOperativo: p.OS || 'Desconocido',
+            ultimoAcceso: p.LastSeen ? new Date(p.LastSeen).toLocaleString() : 'Conectado ahora',
+            enlace: 'Zero-Trust WireGuard'
+          },
+          x: 200 + (idx * 280),
+          y: 30
+        });
+        links.push({
+          source: 'node-tailscale-gateway',
+          target: pId,
+          label: 'WireGuard'
+        });
+      });
+    }
+
+    // 4. Dispositivos Reales de Red Local LAN (Descubiertos vía ARP)
+    const lanNeighbors = Array.isArray(data?.network?.neighbors) ? data.network.neighbors : [];
+    lanNeighbors.slice(0, 4).forEach((n, idx) => {
+      if (!n || !n.ip) return;
+      const nId = `node-lan-real-${idx}`;
+      const dTypeStr = typeof n.device_type === 'string' ? n.device_type.toLowerCase() : '';
+      const vendorStr = typeof n.vendor === 'string' ? n.vendor.toLowerCase() : '';
+      const isPhone = dTypeStr.includes('phone') || vendorStr.includes('apple') || vendorStr.includes('samsung');
+
+      nodes.push({
+        id: nId,
+        name: `${n.vendor && n.vendor !== 'Desconocido' ? n.vendor : 'Equipo'} (${n.device_type || 'LAN'})`,
+        type: isPhone ? 'phone' : 'workstation',
+        category: 'lan',
+        ip: n.ip,
+        mac: n.mac || '',
+        status: 'online',
+        latency: 4 + (idx * 2),
+        icon: isPhone ? 'smartphone' : 'laptop',
+        details: {
+          role: 'Dispositivo en Subred Local',
+          interfaz: n.interface || primaryNet.name,
+          fabricante: n.vendor || 'Dispositivo de Red',
+          direccionMAC: n.mac || 'N/A',
+          medioFisico: isWifi ? 'Wi-Fi Local' : 'Ethernet UTP'
+        },
+        x: 180,
+        y: 200 + (idx * 90)
+      });
+      links.push({
+        source: 'node-core-master',
+        target: nId,
+        label: isWifi ? 'Wi-Fi LAN' : 'Ethernet LAN'
+      });
     });
-    links.push({ source: 'node-core-master', target: 'node-klipper', label: 'Port 7125' });
 
-    // Nodos 6: Contenedores Docker (Microservicios)
+    // 5. Contenedores Docker Reales (Solo si existen contenedores reales activos)
     const containers = Array.isArray(data?.containers) ? data.containers : [];
-    containers.slice(0, 3).forEach((c, idx) => {
+    containers.slice(0, 2).forEach((c, idx) => {
       if (!c) return;
       const cId = `node-docker-${c.id || idx}`;
       const cStatusStr = typeof c.status === 'string' ? c.status : '';
@@ -163,83 +221,64 @@ export default function NetworkTopologyView({ data, handleAction }) {
         name: `Docker: ${c.name || 'Contenedor'}`,
         type: 'docker',
         category: 'server',
-        ip: c.ports || 'Bridge Net',
+        ip: c.ports || 'Bridge Local',
         status: cStatusStr.includes('Up') ? 'online' : 'idle',
-        latency: 1,
+        latency: 0.5,
         icon: 'database',
         details: {
-          image: c.image || 'imagen',
-          status: cStatusStr || 'N/A',
-          command: c.command || '',
-          containerId: c.id || ''
+          role: 'Servicio Contenerizado',
+          imagen: c.image || 'imagen',
+          estado: cStatusStr || 'N/A',
+          puertos: c.ports || 'Bridge Net'
         },
-        x: 740,
-        y: 350 + (idx * 90)
+        x: 480 + (idx * 160),
+        y: 470
       });
-      links.push({ source: 'node-core-master', target: cId, label: 'Docker Bridge' });
+      links.push({
+        source: 'node-core-master',
+        target: cId,
+        label: 'Docker Socket'
+      });
     });
 
-    // Nodos 7: Dispositivos Tailscale (Laptops y Clientes Remotos)
-    const tsPeers = data?.tailscale?.Peer ? Object.values(data.tailscale.Peer) : [];
-    tsPeers.slice(0, 4).forEach((p, idx) => {
-      if (!p) return;
-      const pId = `node-ts-${idx}`;
+    // 6. Klipper 3D Printer: Solo se agrega si el usuario lo tiene instalado y activo
+    const isKlipperReady = data?.moonraker?.klippy_state === 'ready';
+    if (isKlipperReady) {
+      const klippyStatus = data?.printer?.print_stats?.state?.toUpperCase() || 'READY';
       nodes.push({
-        id: pId,
-        name: p.HostName || `Cliente VPN ${idx+1}`,
-        type: 'laptop',
-        category: 'vpn',
-        ip: p.TailscaleIPs?.[0] || '100.x.x.x',
-        status: p.Online ? 'online' : 'offline',
-        latency: p.Online ? 18 + (idx * 5) : 999,
-        icon: 'laptop',
-        details: {
-          os: p.OS || 'Dispositivo Remoto',
-          lastSeen: p.LastSeen ? new Date(p.LastSeen).toLocaleString() : 'Conectado ahora',
-          tailscaleId: p.ID || '',
-          role: 'Cliente de Laboratorio Cifrado'
-        },
-        x: 180 + (idx * 160),
-        y: 520
-      });
-      links.push({ source: 'node-firewall', target: pId, label: 'Túnel WireGuard' });
-    });
-
-    // Nodos 8: Dispositivos de Red Local LAN (Vecinos ARP / PCs)
-    const lanNeighbors = Array.isArray(data?.network?.neighbors) ? data.network.neighbors : [];
-    lanNeighbors.slice(0, 4).forEach((n, idx) => {
-      if (!n) return;
-      const nId = `node-lan-${idx}`;
-      const dTypeStr = typeof n.device_type === 'string' ? n.device_type.toLowerCase() : '';
-      const vendorStr = typeof n.vendor === 'string' ? n.vendor.toLowerCase() : '';
-      const isPhone = dTypeStr.includes('phone') || vendorStr.includes('apple');
-      nodes.push({
-        id: nId,
-        name: `${n.vendor || 'Dispositivo'} (${n.device_type || 'Equipo LAN'})`,
-        type: isPhone ? 'phone' : 'workstation',
-        category: 'lan',
-        ip: n.ip || '192.168.1.x',
-        mac: n.mac || '',
+        id: 'node-klipper-ready',
+        name: 'Laboratorio Klipper 3D',
+        type: 'printer',
+        category: 'hardware',
+        ip: 'Puerto 7125 / USB Serial',
         status: 'online',
-        latency: 5 + (idx * 3),
-        icon: isPhone ? 'smartphone' : 'laptop',
-        details: {
-          interface: n.interface || 'eth0',
-          vendor: n.vendor || 'Desconocido',
-          deviceType: n.device_type || 'Genérico',
-          macAddress: n.mac || 'N/A',
-          role: 'Estación de Trabajo / Dispositivo LAN'
+        latency: 2,
+        icon: 'printer',
+        resources: {
+          klippyState: 'ready',
+          printState: klippyStatus,
+          extruderTemp: data?.printer?.extruder?.temperature || 0,
+          bedTemp: data?.printer?.heater_bed?.temperature || 0,
         },
-        x: 80 + (idx * 140),
-        y: 200 + (idx * 70)
+        details: {
+          role: 'Fabricación Aditiva y Control G-Code',
+          conexion: 'Moonraker API Webhooks',
+          estadoKlippy: klippyStatus
+        },
+        x: 760,
+        y: 390
       });
-      links.push({ source: 'node-lan-switch', target: nId, label: 'Cable UTP' });
-    });
+      links.push({
+        source: 'node-core-master',
+        target: 'node-klipper-ready',
+        label: 'Moonraker API 7125'
+      });
+    }
 
-    return { nodes, links };
-  }, [data]);
+    return { nodes, links, isKlipperReady };
+  }, [data, connectedServers]);
 
-  // Filtrado de Nodos
+  // Filtrado de Nodos Activos
   const filteredNodes = useMemo(() => {
     return (topologyData?.nodes || []).filter(n => {
       if (!n) return false;
@@ -255,7 +294,7 @@ export default function NetworkTopologyView({ data, handleAction }) {
     });
   }, [topologyData?.nodes, filterType, searchQuery]);
 
-  // Enviar Ping Real
+  // Acciones en Vivo: Ping
   const handlePingNode = async (host) => {
     if (!host) return;
     setPingLoading(true);
@@ -275,7 +314,7 @@ export default function NetworkTopologyView({ data, handleAction }) {
     }
   };
 
-  // Enviar Señal / Notificación Real
+  // Enviar Señal en Vivo
   const handleSendSignal = async (node) => {
     if (!signalMessage.trim()) return;
     setSignalSending(true);
@@ -292,7 +331,7 @@ export default function NetworkTopologyView({ data, handleAction }) {
         })
       });
       if (res.ok) {
-        setSignalStatus({ type: 'success', msg: 'Señal transmitida al bus de Sentinel' });
+        setSignalStatus({ type: 'success', msg: 'Señal transmitida exitosamente' });
         setSignalMessage('');
       } else {
         setSignalStatus({ type: 'error', msg: 'Fallo al transmitir señal' });
@@ -306,7 +345,7 @@ export default function NetworkTopologyView({ data, handleAction }) {
 
   const getNodeIcon = (iconName, size = 18) => {
     switch (iconName) {
-      case 'globe': return <Globe size={size} color="#60a5fa" />;
+      case 'wifi': return <Wifi size={size} color="#06b6d4" />;
       case 'shield': return <Shield size={size} color="#34d399" />;
       case 'server': return <Server size={size} color="#818cf8" />;
       case 'router': return <Router size={size} color="#f59e0b" />;
@@ -317,6 +356,24 @@ export default function NetworkTopologyView({ data, handleAction }) {
     }
   };
 
+  // Categorías dinámicas disponibles
+  const availableFilterCategories = useMemo(() => {
+    const list = [
+      { id: 'all', label: 'Topología Completa' },
+      { id: 'server', label: 'Servidores & Core' }
+    ];
+    const hasVpn = topologyData.nodes.some(n => n.category === 'vpn');
+    if (hasVpn) list.push({ id: 'vpn', label: 'Tailscale VPN' });
+
+    const hasLan = topologyData.nodes.some(n => n.category === 'lan');
+    if (hasLan) list.push({ id: 'lan', label: 'Dispositivos LAN' });
+
+    if (topologyData.isKlipperReady) {
+      list.push({ id: 'hardware', label: 'Periféricos 3D' });
+    }
+    return list;
+  }, [topologyData]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       {/* Barra de Filtros y Búsqueda */}
@@ -325,13 +382,7 @@ export default function NetworkTopologyView({ data, handleAction }) {
           <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Filtrar Capas:
           </span>
-          {[
-            { id: 'all', label: 'Topología Completa' },
-            { id: 'server', label: 'Servidores & Core' },
-            { id: 'vpn', label: 'Tailscale VPN' },
-            { id: 'lan', label: 'Dispositivos LAN' },
-            { id: 'hardware', label: 'Periféricos / Klipper' }
-          ].map(f => (
+          {availableFilterCategories.map(f => (
             <button
               key={f.id}
               onClick={() => setFilterType(f.id)}
@@ -374,14 +425,14 @@ export default function NetworkTopologyView({ data, handleAction }) {
       </div>
 
       {/* Diagrama de Topología SVG Interactivo */}
-      <div style={{ position: 'relative', width: '100%', minHeight: '620px', background: 'rgba(15, 23, 42, 0.75)', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', width: '100%', minHeight: '580px', background: 'rgba(15, 23, 42, 0.75)', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)', overflow: 'hidden' }}>
         {/* Leyenda y Estadísticas de Malla */}
         <div style={{ position: 'absolute', top: '16px', left: '16px', zIndex: 10, display: 'flex', gap: '0.75rem', pointerEvents: 'none' }}>
           <div style={{ background: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(8px)', padding: '0.4rem 0.85rem', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.1)', fontSize: '0.78rem', color: '#94a3b8' }}>
-            Total Nodos: <strong style={{ color: '#38bdf8' }}>{topologyData.nodes.length}</strong>
+            Nodos Activos: <strong style={{ color: '#38bdf8' }}>{topologyData.nodes.length}</strong>
           </div>
           <div style={{ background: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(8px)', padding: '0.4rem 0.85rem', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.1)', fontSize: '0.78rem', color: '#94a3b8' }}>
-            Estado: <strong style={{ color: '#34d399' }}>Malla Cifrada y Saludable</strong>
+            Interfaz Host: <strong style={{ color: '#34d399' }}>{data?.network?.primary?.name || 'Ethernet'} ({data?.network?.primary?.speed || 1000} Mbps)</strong>
           </div>
         </div>
 
@@ -404,7 +455,6 @@ export default function NetworkTopologyView({ data, handleAction }) {
             const t = topologyData.nodes.find(n => n.id === link.target);
             if (!s || !t) return null;
 
-            // Curva Bézier fluida
             const dx = t.x - s.x;
             const dy = t.y - s.y;
             const cx1 = s.x + dx * 0.5;
@@ -431,7 +481,7 @@ export default function NetworkTopologyView({ data, handleAction }) {
           })}
         </svg>
 
-        {/* Nodos Interactivos (Renderizados en posición absoluta) */}
+        {/* Nodos Interactivos */}
         {filteredNodes.map(node => {
           const isSelected = selectedNode?.id === node.id;
           const isOnline = node.status === 'online';
@@ -509,7 +559,7 @@ export default function NetworkTopologyView({ data, handleAction }) {
         })}
       </div>
 
-      {/* Modal / Inspector Lateral de Dispositivo Seleccionado */}
+      {/* Inspector Lateral de Dispositivo Seleccionado */}
       {selectedNode && (
         <div
           className="glass-panel"
@@ -613,42 +663,22 @@ export default function NetworkTopologyView({ data, handleAction }) {
             )}
           </div>
 
-          {/* Actividad Últimas 24 Horas (Sistema Last Day) */}
-          <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', padding: '1rem', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#94a3b8', marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Actividad en las Últimas 24 Horas
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-              <span style={{ color: '#94a3b8' }}>Disponibilidad (Uptime):</span>
-              <span style={{ color: '#34d399', fontWeight: 700 }}>99.9% Operativo</span>
-            </div>
-
-            {/* Barra de Historial de Disponibilidad Segmentada */}
-            <div style={{ display: 'flex', gap: '3px', height: '14px', borderRadius: '4px', overflow: 'hidden', marginBottom: '0.75rem' }}>
-              {Array.from({ length: 24 }).map((_, i) => (
-                <div
-                  key={i}
-                  title={`Hora ${i}:00 - Operativo`}
-                  style={{
-                    flex: 1,
-                    background: i === 18 && selectedNode.status === 'idle' ? '#f59e0b' : '#10b981',
-                    borderRadius: '1px'
-                  }}
-                />
-              ))}
-            </div>
-
-            {selectedNode.details && (
+          {/* Detalles de Conexión del Dispositivo */}
+          {selectedNode.details && (
+            <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', padding: '1rem', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#94a3b8', marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Propiedades de Red
+              </div>
               <div style={{ fontSize: '0.78rem', color: '#cbd5e1', lineHeight: '1.45' }}>
                 {Object.entries(selectedNode.details).map(([k, v]) => (
-                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', margin: '0.2rem 0' }}>
-                    <span style={{ color: '#64748b', textTransform: 'capitalize' }}>{k}:</span>
+                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', margin: '0.3rem 0' }}>
+                    <span style={{ color: '#64748b', textTransform: 'capitalize' }}>{k.replace(/([A-Z])/g, ' $1')}:</span>
                     <span style={{ color: '#e2e8f0', fontWeight: 500 }}>{v}</span>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Panel de Control y Emisión de Señales / Acciones Reales */}
           <div style={{ background: 'rgba(59, 130, 246, 0.06)', borderRadius: '8px', padding: '1rem', border: '1px solid rgba(59, 130, 246, 0.25)' }}>
@@ -656,7 +686,7 @@ export default function NetworkTopologyView({ data, handleAction }) {
               Control y Emisión de Señales
             </div>
 
-            {/* 1. Botón Ping de Latencia en Vivo */}
+            {/* Botón Ping de Latencia en Vivo */}
             <div style={{ marginBottom: '1rem' }}>
               <button
                 onClick={() => handlePingNode(selectedNode.ip.split(' ')[0])}
@@ -688,7 +718,7 @@ export default function NetworkTopologyView({ data, handleAction }) {
               )}
             </div>
 
-            {/* 2. Enviar Mensaje / Alerta al Dispositivo */}
+            {/* Enviar Notificación o Comando Remoto */}
             <div>
               <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.35rem' }}>
                 Enviar Notificación o Comando Remoto:
@@ -737,7 +767,7 @@ export default function NetworkTopologyView({ data, handleAction }) {
               )}
             </div>
 
-            {/* 3. Acciones Especiales: Wake-on-LAN o Reinicio */}
+            {/* Acciones Especiales: Wake-on-LAN */}
             {selectedNode.mac && (
               <div style={{ marginTop: '0.85rem', paddingTop: '0.85rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
                 <button

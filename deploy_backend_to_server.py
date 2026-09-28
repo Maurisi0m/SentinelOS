@@ -2,7 +2,10 @@ import paramiko
 import os
 import sys
 
-HOST = "192.168.68.68"
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+HOST = "labsentinel.tailc83bd7.ts.net"
 USER = "mauro"
 PASS = "Pollito92."
 
