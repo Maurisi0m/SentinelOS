@@ -723,6 +723,30 @@ def collect_data() -> dict:
     _LAST_FULL_SCAN_TIME = now
     return result_data
 
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok", "time": time.time()}
+
+@app.get("/api/node/info")
+def get_node_info():
+    auth_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "node_auth.json")
+    auth_data = {}
+    if os.path.exists(auth_file):
+        try:
+            with open(auth_file, "r", encoding="utf-8") as f:
+                auth_data = json.load(f)
+        except Exception:
+            pass
+    return {
+        "status": "online",
+        "node_id": auth_data.get("node_id", "node-sentinel"),
+        "node_name": auth_data.get("node_name", socket.gethostname()),
+        "platform": sys.platform,
+        "cores": psutil.cpu_count(logical=True),
+        "total_ram_gb": round(psutil.virtual_memory().total / (1024**3), 1),
+        "version": "2.0.0"
+    }
+
 @app.get("/api/data")
 def get_data():
     global LAST_ACTIVE_TIME

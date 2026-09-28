@@ -22,6 +22,7 @@ from .skills import AVAILABLE_SKILLS
 from .tailscale import setup_tailscale_interactive
 from .autostart import configure_autostart, disable_autostart
 from .service_runner import start_and_verify_services
+from .node_token import get_or_create_node_auth
 import webbrowser
 import subprocess
 
@@ -159,9 +160,59 @@ def main():
     print()
 
     # -------------------------------------------------------------
-    # PASO 2: CATÁLOGO DE SKILLS & MÓDULOS CON SUBMENÚS
+    # PASO 2: ROL Y MODO DE DESPLIEGUE DEL SISTEMA
     # -------------------------------------------------------------
-    print_header(i18n.t("step2"), "2/6")
+    print_header("Rol y Modo de Despliegue / Node Deployment Role", "2/7")
+    print("Elige cómo deseas configurar este equipo en tu infraestructura:\n" if lang == "es" else "Choose how to configure this machine in your infrastructure:\n")
+    print(f"  {Colors.BOLD}[1]{Colors.RESET} {Colors.CYAN}Nodo Maestro (Control / Cockpit){Colors.RESET}")
+    print("      Para tu laptop personal o estación de trabajo de administración.")
+    print("      Despliega el Dashboard interactivo con monitoreo local y gestor de servidores remotos.\n")
+
+    print(f"  {Colors.BOLD}[2]{Colors.RESET} {Colors.YELLOW}Servidor Dedicado / Nodo de Cómputo (Laboratorio 24/7){Colors.RESET}")
+    print("      Para servidores físicos, racks, clusters o máquinas secundarias.")
+    print("      Ejecuta cargas pesadas, inferencia IA y telemetría perimetral permanente.\n")
+
+    print(f"  {Colors.BOLD}[3]{Colors.RESET} {Colors.GREEN}Nodo de Red / Sentinel Mesh (Interconexión Segura){Colors.RESET}")
+    print("      Configuración especializada de red cifrada multi-nodo.\n")
+
+    role_choice = input("Selecciona una opción / Select an option [1]: ").strip()
+    node_role = "master"
+
+    if role_choice == "2":
+        print("\n" + "-" * 70)
+        print("  OPCIONES DE CONFIGURACIÓN DEL SERVIDOR" if lang == "es" else "  SERVER CONFIGURATION OPTIONS")
+        print("-" * 70)
+        print(f"  {Colors.BOLD}[A]{Colors.RESET} {Colors.CYAN}Agente Puro Headless (Solo conexión para Dashboard Maestro, sin interfaz){Colors.RESET}")
+        print("      - Sin abrir navegador ni consumir recursos en interfaz gráfica.")
+        print("      - Levanta el demonio en segundo plano 24/7 (auto-arranque en boot).")
+        print("      - Genera el Token y la IP para vincularlo a tu Laptop Maestra.\n")
+
+        print(f"  {Colors.BOLD}[B]{Colors.RESET} {Colors.GREEN}Servidor Híbrido (Conexión a Maestro + Interfaz Web Propia){Colors.RESET}")
+        print("      - Proporciona la interfaz web accesible en red local (http://IP:8001).")
+        print("      - Levanta el demonio permanente en segundo plano.")
+        print("      - Genera el Token para vincularlo también a la Laptop Maestra.\n")
+
+        print(f"  {Colors.BOLD}[C]{Colors.RESET} {Colors.YELLOW}Servidor Standalone (Únicamente Dashboard Propio local){Colors.RESET}")
+        print("      - Servidor autónomo con panel web local sin vinculación remota.\n")
+
+        sub_choice = input("Selección de modo de servidor [A]: ").strip().lower()
+        if sub_choice == "b":
+            node_role = "server_hybrid"
+        elif sub_choice == "c":
+            node_role = "server_standalone"
+        else:
+            node_role = "server_headless"
+    elif role_choice == "3":
+        node_role = "mesh"
+    else:
+        node_role = "master"
+
+    print_success(f"Modo de nodo establecido: {node_role.upper()}\n")
+
+    # -------------------------------------------------------------
+    # PASO 3: CATÁLOGO DE SKILLS & MÓDULOS CON SUBMENÚS
+    # -------------------------------------------------------------
+    print_header(i18n.t("step2"), "3/7")
     print(i18n.t("step2_desc") + "\n")
 
     for idx, skill_cls in enumerate(AVAILABLE_SKILLS, 1):
@@ -170,11 +221,15 @@ def main():
         print(f"  {Colors.BOLD}[{idx}]{Colors.RESET} {Colors.CYAN}{name}{Colors.RESET}")
         print(f"      {Colors.DIM}{desc}{Colors.RESET}")
 
+    default_skills = "N" if node_role == "server_headless" else "A"
     print(f"\n  {Colors.BOLD}[A]{Colors.RESET} {Colors.GREEN}Instalar todas las skills recomendadas{Colors.RESET}")
-    print(f"  {Colors.BOLD}[N]{Colors.RESET} Solo núcleo mínimo (STEM LLM + Cockpit)\n")
+    print(f"  {Colors.BOLD}[N]{Colors.RESET} Solo núcleo mínimo (STEM LLM + Telemetría)\n")
 
-    choice = input("Selección [A]: ").strip().lower()
-    if choice == "" or choice == "a":
+    choice = input(f"Selección [{default_skills}]: ").strip().lower()
+    if choice == "":
+        choice = default_skills.lower()
+
+    if choice == "a":
         chosen_indices = list(range(1, len(AVAILABLE_SKILLS) + 1))
     elif choice == "n":
         chosen_indices = []
@@ -192,9 +247,9 @@ def main():
             configured_skills.append(skill_instance)
 
     # -------------------------------------------------------------
-    # PASO 3: TÉRMINOS Y RESPONSABILIDAD ÉTICA
+    # PASO 4: TÉRMINOS Y RESPONSABILIDAD ÉTICA
     # -------------------------------------------------------------
-    print_header(i18n.t("step3"), "3/6")
+    print_header(i18n.t("step3"), "4/7")
     print(f"{Colors.YELLOW}{i18n.t('terms_text')}{Colors.RESET}\n")
     agree = input(i18n.t("accept_terms")).strip().lower()
     if agree not in ['s', 'si', 'y', 'yes', '']:
@@ -203,9 +258,12 @@ def main():
     print_success("Términos aceptados.\n")
 
     # -------------------------------------------------------------
-    # PASO 4: AUTOINICIO AL ENCENDER EL SERVIDOR (OPCIONAL/RECOMENDADO)
+    # PASO 5: AUTOINICIO AL ENCENDER EL SERVIDOR (OPCIONAL/RECOMENDADO)
     # -------------------------------------------------------------
-    print_header(i18n.t("step_autostart"), "4/6")
+    print_header(i18n.t("step_autostart"), "5/7")
+    if node_role in ["server_headless", "server_hybrid", "server_standalone"]:
+        print_info("Modo Servidor detectado: El auto-inicio 24/7 en boot es altamente recomendado para mantener el servicio activo.")
+    
     prompt_auto = i18n.t("step_autostart_desc")
     auto_choice = input(prompt_auto).strip().lower()
     autostart_enabled = (auto_choice not in ['n', 'no'])
@@ -216,9 +274,9 @@ def main():
         print_info("Inicio automático omitido por el usuario." if lang == "es" else "Autostart skipped by user.")
 
     # -------------------------------------------------------------
-    # PASO 5: CONEXIÓN SEGURA TAILSCALE ZERO-CONFIG
+    # PASO 6: CONEXIÓN SEGURA TAILSCALE ZERO-CONFIG
     # -------------------------------------------------------------
-    print_header(i18n.t("step4"), "5/6")
+    print_header(i18n.t("step4"), "6/7")
     ts_ask = input(i18n.t("tailscale_prompt")).strip().lower()
     ts_data = {"url": "", "ip": "", "domain": ""}
     if ts_ask not in ['n', 'no']:
@@ -228,40 +286,80 @@ def main():
     ts_ip = ts_data.get("ip", "")
 
     # -------------------------------------------------------------
-    # PASO 6: DESPLIEGUE REAL Y VERIFICACIÓN EN VIVO HTTP
+    # PASO 7: DESPLIEGUE REAL Y VERIFICACIÓN EN VIVO HTTP
     # -------------------------------------------------------------
-    print_header(i18n.t("step5"), "6/6")
+    print_header(i18n.t("step5"), "7/7")
     is_healthy, local_base = start_and_verify_services(os_info, ROOT_DIR, lang)
 
     lan_ip = get_lan_ip()
     local_display_url = f"http://{lan_ip}:8001"
+    node_auth = get_or_create_node_auth(ROOT_DIR)
 
     # -------------------------------------------------------------
-    # TARJETA FINAL DE ÉXITO Y CONECTIVIDAD COMPROBADA
+    # TARJETAS FINALES SEGÚN EL ROL DEL NODO
     # -------------------------------------------------------------
-    print("\n" + f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74)
-    print(f"  🎉  {i18n.t('success_title')}")
-    print("═" * 74 + f"{Colors.RESET}")
-    print(f"  {Colors.BOLD}💻  Enlace Localhost:{Colors.RESET}           {Colors.CYAN}http://127.0.0.1:8001{Colors.RESET} (Comprobado ✔)")
-    print(f"  {Colors.BOLD}🌐  Enlace Red Local (LAN):{Colors.RESET}     {Colors.CYAN}{local_display_url}{Colors.RESET} (Comprobado ✔)")
-    if ts_ip:
-        print(f"  {Colors.BOLD}🔒  IP Red Segura Tailscale:{Colors.RESET}   {Colors.CYAN}http://{ts_ip}:8001{Colors.RESET} (Comprobado ✔)")
-    if remote_url:
-        print(f"  {Colors.BOLD}✨  Enlace Cifrado MagicDNS:{Colors.RESET}   {Colors.GREEN}{remote_url}{Colors.RESET} (HTTPS Cifrado ✔)")
-    
-    active_skills_list = [s.id for s in configured_skills] if configured_skills else ["Core STEM"]
-    print(f"  {Colors.BOLD}🧩  Módulos Desplegados:{Colors.RESET}        {', '.join(active_skills_list)}")
-    print(f"  {Colors.BOLD}🚀  Unir Servidores Satélite (Mesh Fleet):{Colors.RESET}")
-    print(f"      curl -fsSL {local_display_url}/api/mesh/join.sh | bash\n")
-    print(f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74 + f"{Colors.RESET}\n")
+    if node_role == "server_headless":
+        print("\n" + f"{Colors.BOLD}{Colors.CYAN}" + "═" * 74)
+        print("  🔑  SERVIDOR ACTIVO EN MODO HEADLESS (CONEXIÓN A DASHBOARD MAESTRO)")
+        print("═" * 74 + f"{Colors.RESET}")
+        print(f"  {Colors.BOLD}🖥️  Nombre del Servidor:{Colors.RESET}        {node_auth.get('node_name', 'Sentinel-Server')}")
+        print(f"  {Colors.BOLD}🌐  Dirección IP Local (LAN):{Colors.RESET}   {Colors.CYAN}http://{lan_ip}:8001{Colors.RESET}")
+        if ts_ip:
+            print(f"  {Colors.BOLD}🔒  Dirección IP Tailscale:{Colors.RESET}     {Colors.CYAN}http://{ts_ip}:8001{Colors.RESET}")
+        print(f"  {Colors.BOLD}🔑  Token de Conexión PIN:{Colors.RESET}      {Colors.GREEN}{node_auth.get('token')}{Colors.RESET}")
+        print(f"  {Colors.BOLD}📡  Estado del Servicio:{Colors.RESET}        {Colors.GREEN}ACTIVO 24/7 EN SEGUNDO PLANO (Sin UI local){Colors.RESET}\n")
+        print(f"  {Colors.YELLOW}Instrucciones de vinculación con tu Laptop Maestra:{Colors.RESET}")
+        print("  1. Abre el Cockpit en tu Laptop Maestra (http://127.0.0.1:8001).")
+        print("  2. En el menú superior o barra lateral pulsa en '[+ Conectar Servidor]'.")
+        print(f"  3. Pega los siguientes datos de este servidor:")
+        print(f"     • Host / IP:  {lan_ip} (o la IP de Tailscale: {ts_ip if ts_ip else lan_ip})")
+        print(f"     • Puerto:     8001")
+        print(f"     • Token PIN:  {node_auth.get('token')}\n")
+        print(f"{Colors.BOLD}{Colors.CYAN}" + "═" * 74 + f"{Colors.RESET}\n")
 
-    # Si es sistema de escritorio (Windows o con interfaz grafica), abrir navegador por defecto
-    if os_info.get("system") == "Windows" or os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
-        try:
-            print_info("Abriendo panel de control en tu navegador predeterminado..." if lang == "es" else "Opening cockpit in default browser...")
-            webbrowser.open("http://127.0.0.1:8001")
-        except Exception:
-            pass
+    elif node_role == "server_hybrid":
+        print("\n" + f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74)
+        print("  ✨  SERVIDOR HÍBRIDO ACTIVO: WEB PROPIA + VINCULACIÓN A MAESTRO")
+        print("═" * 74 + f"{Colors.RESET}")
+        print(f"  {Colors.BOLD}💻  Interfaz Web del Servidor:{Colors.RESET}   {Colors.CYAN}http://{lan_ip}:8001{Colors.RESET} (Comprobado ✔)")
+        print(f"  {Colors.BOLD}🔑  Token para Laptop Maestra:{Colors.RESET}   {Colors.GREEN}{node_auth.get('token')}{Colors.RESET}")
+        if ts_ip:
+            print(f"  {Colors.BOLD}🔒  IP Tailscale Segura:{Colors.RESET}        {Colors.CYAN}http://{ts_ip}:8001{Colors.RESET}")
+        print(f"  {Colors.BOLD}📡  Estado del Servicio:{Colors.RESET}        {Colors.GREEN}OPERATIVO 24/7{Colors.RESET}\n")
+        print(f"  {Colors.YELLOW}Datos para vincular a tu Laptop Maestra:{Colors.RESET}")
+        print(f"  • Host: {lan_ip} | Puerto: 8001 | Token: {node_auth.get('token')}\n")
+        print(f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74 + f"{Colors.RESET}\n")
+
+        open_web = input("¿Deseas abrir la interfaz gráfica local en este servidor? (s/N): ").strip().lower()
+        if open_web in ['s', 'si', 'y']:
+            try:
+                webbrowser.open(f"http://127.0.0.1:8001")
+            except Exception:
+                pass
+
+    else:
+        # Nodo Maestro o Servidor Standalone con interfaz interactiva
+        print("\n" + f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74)
+        print(f"  🎉  {i18n.t('success_title')}")
+        print("═" * 74 + f"{Colors.RESET}")
+        print(f"  {Colors.BOLD}💻  Enlace Localhost:{Colors.RESET}           {Colors.CYAN}http://127.0.0.1:8001{Colors.RESET} (Comprobado ✔)")
+        print(f"  {Colors.BOLD}🌐  Enlace Red Local (LAN):{Colors.RESET}     {Colors.CYAN}{local_display_url}{Colors.RESET} (Comprobado ✔)")
+        if ts_ip:
+            print(f"  {Colors.BOLD}🔒  IP Red Segura Tailscale:{Colors.RESET}   {Colors.CYAN}http://{ts_ip}:8001{Colors.RESET} (Comprobado ✔)")
+        if remote_url:
+            print(f"  {Colors.BOLD}✨  Enlace Cifrado MagicDNS:{Colors.RESET}   {Colors.GREEN}{remote_url}{Colors.RESET} (HTTPS Cifrado ✔)")
+        
+        active_skills_list = [s.id for s in configured_skills] if configured_skills else ["Core STEM"]
+        print(f"  {Colors.BOLD}🧩  Módulos Desplegados:{Colors.RESET}        {', '.join(active_skills_list)}")
+        print(f"  {Colors.BOLD}🚀  Modo Activo:{Colors.RESET}                {node_role.upper()}")
+        print(f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74 + f"{Colors.RESET}\n")
+
+        if os_info.get("system") == "Windows" or os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+            try:
+                print_info("Abriendo panel de control en tu navegador predeterminado..." if lang == "es" else "Opening cockpit in default browser...")
+                webbrowser.open("http://127.0.0.1:8001")
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     main()
