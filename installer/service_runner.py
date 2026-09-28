@@ -36,13 +36,20 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
         else:
             # En Windows o sin systemd: arrancar uvicorn en segundo plano con logging
             print_info("Iniciando backend uvicorn como proceso en segundo plano..." if lang == "es" else "Starting uvicorn backend as a background process...")
-            py_bin = sys.executable
+            
+            # Priorizar siempre el intérprete del entorno virtual aislado si existe
+            if sys.platform == "win32":
+                venv_py = os.path.join(root_dir, ".venv", "Scripts", "python.exe")
+            else:
+                venv_py = os.path.join(root_dir, ".venv", "bin", "python3")
+            py_bin = venv_py if os.path.exists(venv_py) else sys.executable
 
             log_out = open(log_file_path, "a", encoding="utf-8")
+            proc = None
             if system == "Windows":
                 DETACHED_PROCESS = 0x00000008
                 CREATE_NEW_PROCESS_GROUP = 0x00000200
-                subprocess.Popen(
+                proc = subprocess.Popen(
                     [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"],
                     cwd=backend_dir,
                     stdout=log_out,
@@ -51,7 +58,7 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
                     close_fds=True
                 )
             else:
-                subprocess.Popen(
+                proc = subprocess.Popen(
                     [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"],
                     cwd=backend_dir,
                     stdout=log_out,
@@ -67,6 +74,9 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
     
     for attempt in range(1, 25):
         time.sleep(1)
+        if proc and proc.poll() is not None:
+            print_error(f"El backend uvicorn terminó prematuramente con código {proc.poll()}.")
+            break
         try:
             req = urllib.request.Request("http://127.0.0.1:8001/api/data", headers={"User-Agent": "SentinelInstaller"})
             with urllib.request.urlopen(req, timeout=3) as resp:

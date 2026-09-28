@@ -97,7 +97,7 @@ if (Test-Path $venvPython) {
     if (-not $pipCheck) {
         Write-Host "[*] Auto-reparacion: Desplegando gestor pip autonomamente dentro del entorno virtual..." -ForegroundColor Cyan
         if (Test-Path $localGetPip) {
-            & "$venvPython" "$localGetPip" --no-warn-script-location --no-setuptools --no-wheel
+            & "$venvPython" "$localGetPip" --no-setuptools --no-wheel
         } else {
             & "$venvPython" -m ensurepip --upgrade 2>$null
         }
@@ -109,7 +109,7 @@ if (Test-Path $venvPython) {
         $tempPip = Join-Path $env:TEMP "sentinel_get_pip.py"
         curl.exe -sSL https://bootstrap.pypa.io/get-pip.py -o "$tempPip" 2>$null
         if (Test-Path $tempPip) {
-            & "$venvPython" "$tempPip" --no-warn-script-location --no-setuptools --no-wheel
+            & "$venvPython" "$tempPip" --no-setuptools --no-wheel
         }
     }
     
@@ -125,7 +125,7 @@ if (Test-Path $venvPython) {
     $sysPipCheck = & $pythonCmd -m pip --version 2>$null
     if (-not $sysPipCheck -and (Test-Path $localGetPip)) {
         Write-Host "[*] Auto-reparacion: Instalando pip en espacio de usuario..." -ForegroundColor Cyan
-        & $pythonCmd "$localGetPip" --user --no-warn-script-location 2>$null
+        & $pythonCmd "$localGetPip" --user --no-setuptools --no-wheel 2>$null
     }
     $env:PYTHONPATH = $projectRoot
     & $pythonCmd -m installer

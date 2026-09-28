@@ -74,7 +74,7 @@ if [ -f "$VENV_PYTHON" ]; then
     if ! "$VENV_PYTHON" -m pip --version &>/dev/null; then
         echo "[*] Auto-reparación: Desplegando gestor pip dentro del entorno virtual..."
         if [ -f "$LOCAL_GET_PIP" ]; then
-            "$VENV_PYTHON" "$LOCAL_GET_PIP" --no-warn-script-location --no-setuptools --no-wheel || true
+            "$VENV_PYTHON" "$LOCAL_GET_PIP" --no-setuptools --no-wheel || true
         else
             "$VENV_PYTHON" -m ensurepip --upgrade 2>/dev/null || true
         fi
@@ -85,7 +85,7 @@ if [ -f "$VENV_PYTHON" ]; then
         TEMP_PIP="/tmp/sentinel_get_pip.py"
         curl -sSL https://bootstrap.pypa.io/get-pip.py -o "$TEMP_PIP" 2>/dev/null || wget -qO "$TEMP_PIP" https://bootstrap.pypa.io/get-pip.py 2>/dev/null || true
         if [ -f "$TEMP_PIP" ]; then
-            "$VENV_PYTHON" "$TEMP_PIP" --no-warn-script-location --no-setuptools --no-wheel || true
+            "$VENV_PYTHON" "$TEMP_PIP" --no-setuptools --no-wheel || true
         fi
     fi
 
@@ -103,7 +103,7 @@ else
     echo "[!] Aviso: No se pudo crear el entorno virtual aislado. Continuando con Python del sistema..."
     if ! python3 -m pip --version &>/dev/null && [ -f "$LOCAL_GET_PIP" ]; then
         echo "[*] Auto-reparación: Instalando pip en espacio de usuario..."
-        python3 "$LOCAL_GET_PIP" --user --no-warn-script-location 2>/dev/null || true
+        python3 "$LOCAL_GET_PIP" --user --no-setuptools --no-wheel 2>/dev/null || true
     fi
     PYTHONPATH="$SCRIPT_DIR" python3 -m installer
 fi

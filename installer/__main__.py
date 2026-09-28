@@ -28,65 +28,83 @@ import subprocess
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def auto_bootstrap_venv():
-    """Si se ejecuta desde el Python global, auto-repara creando y conmutando a .venv automáticamente."""
-    is_venv = (sys.prefix != getattr(sys, "base_prefix", sys.prefix))
-    if is_venv or "--no-venv-bootstrap" in sys.argv:
+    """Garantiza que SentinelOS se ejecute siempre dentro de su entorno virtual aislado (.venv)."""
+    if "--no-venv-bootstrap" in sys.argv or os.environ.get("SENTINEL_NO_VENV") == "1":
         return
 
-    venv_dir = os.path.join(ROOT_DIR, ".venv")
+    venv_dir = os.path.abspath(os.path.join(ROOT_DIR, ".venv"))
     if sys.platform == "win32":
         venv_python = os.path.join(venv_dir, "Scripts", "python.exe")
     else:
         venv_python = os.path.join(venv_dir, "bin", "python3")
 
+    # Comprobar si ya estamos ejecutándonos exactamente dentro del .venv del proyecto
+    current_prefix = os.path.abspath(sys.prefix).lower()
+    current_exe = os.path.abspath(sys.executable).lower()
+    target_venv_lower = venv_dir.lower()
+
+    if current_prefix == target_venv_lower or current_exe.startswith(target_venv_lower):
+        # Ya estamos dentro del entorno virtual del proyecto
+        return
+
+    print(f"\n{Colors.CYAN}[*] Detectado entorno del sistema: {sys.executable}{Colors.RESET}")
+    print(f"{Colors.YELLOW}[*] Auto-reparación: Inicializando entorno virtual aislado (.venv) para garantizar permisos y librerías...{Colors.RESET}")
+
+    # 1. Asegurar que .venv exista con su ejecutable funcional
     needs_create = True
     if os.path.exists(venv_python):
         try:
-            chk = subprocess.run([venv_python, "-c", "import sys"], capture_output=True, timeout=5)
-            if chk.returncode == 0:
+            chk = subprocess.run([venv_python, "-c", "import sys; print(1)"], capture_output=True, text=True, timeout=5)
+            if chk.returncode == 0 and "1" in chk.stdout:
                 needs_create = False
         except Exception:
             needs_create = True
 
     if needs_create:
-        print(f"\n{Colors.CYAN}[*] Detectado interprete Python de sistema.{Colors.RESET}")
-        print(f"{Colors.YELLOW}[*] Auto-reparación: Creando entorno virtual aislado (.venv)...{Colors.RESET}")
-        created = False
-        try:
-            res = subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True, timeout=30)
-            if res.returncode == 0 and os.path.exists(venv_python):
-                created = True
-        except Exception:
-            pass
+        # Usar --without-pip que nunca falla (evita errores de ensurepip en Windows 11 Store y Linux minimal)
+        print(f"{Colors.CYAN}[*] Creando estructura del entorno virtual seguro...{Colors.RESET}")
+        res = subprocess.run([sys.executable, "-m", "venv", "--without-pip", venv_dir], capture_output=True, text=True, timeout=45)
+        if not os.path.exists(venv_python) and sys.platform == "win32":
+            subprocess.run(["py", "-3", "-m", "venv", "--without-pip", venv_dir], capture_output=True, timeout=45)
 
-        if not created or not os.path.exists(venv_python):
-            # Fallback seguro para Windows 11 y sistemas con ensurepip desactivado
-            print(f"{Colors.YELLOW}[*] Auto-reparación: Inicializando entorno seguro con --without-pip...{Colors.RESET}")
-            subprocess.run([sys.executable, "-m", "venv", "--without-pip", venv_dir], capture_output=True, timeout=30)
+    if not os.path.exists(venv_python):
+        print(f"{Colors.RED}[!] Aviso: No se pudo crear {venv_python}. Continuando con el intérprete actual...{Colors.RESET}")
+        return
 
-    if os.path.exists(venv_python):
-        # Asegurar pip dentro del entorno virtual usando bootstrap empaquetado si falta
-        chk_pip = subprocess.run([venv_python, "-m", "pip", "--version"], capture_output=True, text=True)
-        if chk_pip.returncode != 0:
-            print(f"{Colors.YELLOW}[*] Auto-reparación: Bootstrap autónomo de pip en entorno virtual...{Colors.RESET}")
-            local_get_pip = os.path.join(ROOT_DIR, "installer", "get-pip.py")
-            if os.path.exists(local_get_pip):
-                subprocess.run([venv_python, local_get_pip, "--no-warn-script-location", "--no-setuptools", "--no-wheel"], capture_output=True, timeout=120)
-            else:
-                subprocess.run([venv_python, "-m", "ensurepip", "--upgrade"], capture_output=True, timeout=60)
+    # 2. Asegurar que pip esté presente y operativo dentro de .venv
+    chk_pip = subprocess.run([venv_python, "-m", "pip", "--version"], capture_output=True, text=True)
+    if chk_pip.returncode != 0:
+        print(f"{Colors.YELLOW}[*] Auto-reparación: Desplegando gestor pip autónomo dentro del entorno virtual...{Colors.RESET}")
+        local_get_pip = os.path.join(ROOT_DIR, "installer", "get-pip.py")
+        if os.path.exists(local_get_pip):
+            subprocess.run([venv_python, local_get_pip, "--no-setuptools", "--no-wheel"], capture_output=True, text=True, timeout=120)
+        else:
+            subprocess.run([venv_python, "-m", "ensurepip", "--upgrade"], capture_output=True, timeout=60)
 
-        print(f"{Colors.GREEN}[OK] Conmutando ejecución a entorno aislado: {venv_python}{Colors.RESET}\n")
-        
-        # Pre-instalar dependencias básicas en segundo plano si faltan
-        extra_flag = ["--only-binary=:all:"] if sys.platform == "win32" else []
-        subprocess.run([venv_python, "-m", "pip", "install", "--prefer-binary", *extra_flag, "fastapi", "uvicorn", "aiohttp", "requests", "psutil", "pydantic", "-q"], capture_output=True, timeout=120)
+    # 3. Pre-instalar dependencias fundamentales directamente dentro de .venv
+    print(f"{Colors.CYAN}[*] Auto-reparación: Pre-instalando librerías esenciales (fastapi, uvicorn, psutil, pydantic) en el entorno aislado...{Colors.RESET}")
+    pip_cmd = [
+        venv_python, "-m", "pip", "install",
+        "--prefer-binary",
+        "--trusted-host", "pypi.org",
+        "--trusted-host", "files.pythonhosted.org",
+        "fastapi", "uvicorn", "aiohttp", "requests", "psutil", "pydantic"
+    ]
+    if sys.platform == "win32":
+        pip_cmd.insert(4, "--only-binary=:all:")
+    
+    subprocess.run(pip_cmd, capture_output=True, text=True, timeout=180)
 
-        env = os.environ.copy()
-        env["PYTHONPATH"] = ROOT_DIR
-        args = [a for a in sys.argv[1:] if a != "--no-venv-bootstrap"]
-        cmd = [venv_python, "-m", "installer", "--no-venv-bootstrap", *args]
-        res = subprocess.run(cmd, env=env)
-        sys.exit(res.returncode)
+    print(f"{Colors.GREEN}[OK] Entorno virtual aislado configurado exitosamente.{Colors.RESET}")
+    print(f"{Colors.GREEN}[OK] Conmutando ejecución a: {venv_python}{Colors.RESET}\n")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = ROOT_DIR
+    env["VIRTUAL_ENV"] = venv_dir
+    args = [a for a in sys.argv[1:] if a != "--no-venv-bootstrap"]
+    cmd = [venv_python, "-m", "installer", "--no-venv-bootstrap", *args]
+    res = subprocess.run(cmd, env=env)
+    sys.exit(res.returncode)
 
 def get_lan_ip() -> str:
     try:

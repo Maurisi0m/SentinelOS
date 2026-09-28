@@ -99,7 +99,7 @@ def bootstrap_pip(target_python: str = None, lang="es") -> bool:
     if os.path.exists(local_get_pip):
         print_step("Auto-reparación: Desplegando gestor pip desde bootstrap local empaquetado..." if lang == "es" else "Self-healing: Deploying pip from local bundled bootstrap...")
         try:
-            res = subprocess.run([target_python, local_get_pip, "--no-warn-script-location", "--no-setuptools", "--no-wheel"], capture_output=True, text=True, timeout=120)
+            res = subprocess.run([target_python, local_get_pip, "--no-setuptools", "--no-wheel"], capture_output=True, text=True, timeout=120)
             chk = subprocess.run([target_python, "-m", "pip", "--version"], capture_output=True, text=True, timeout=10)
             if chk.returncode == 0:
                 print_success("Auto-reparación: Pip instalado y verificado exitosamente." if lang == "es" else "Self-healing: Pip installed and verified successfully.")
@@ -152,7 +152,7 @@ def bootstrap_pip(target_python: str = None, lang="es") -> bool:
 
     if downloaded:
         try:
-            subprocess.run([target_python, temp_pip, "--no-warn-script-location", "--no-setuptools", "--no-wheel"], capture_output=True, text=True, timeout=120)
+            subprocess.run([target_python, temp_pip, "--no-setuptools", "--no-wheel"], capture_output=True, text=True, timeout=120)
             chk = subprocess.run([target_python, "-m", "pip", "--version"], capture_output=True, text=True, timeout=10)
             if chk.returncode == 0:
                 print_success("Auto-reparación: Pip instalado y verificado exitosamente." if lang == "es" else "Self-healing: Pip installed and verified successfully.")
@@ -164,7 +164,7 @@ def bootstrap_pip(target_python: str = None, lang="es") -> bool:
     if sys.platform == "win32" and os.path.exists(local_get_pip):
         try:
             print_step("Auto-reparación: Intentando despliegue de pip en espacio de usuario (--user)..." if lang == "es" else "Self-healing: Attempting pip deployment in user space (--user)...")
-            subprocess.run([target_python, local_get_pip, "--user", "--no-warn-script-location"], capture_output=True, timeout=120)
+            subprocess.run([target_python, local_get_pip, "--user", "--no-setuptools", "--no-wheel"], capture_output=True, timeout=120)
             chk = subprocess.run([target_python, "-m", "pip", "--version"], capture_output=True, text=True, timeout=10)
             if chk.returncode == 0:
                 print_success("Auto-reparación: Pip instalado en espacio de usuario." if lang == "es" else "Self-healing: Pip installed in user space.")
