@@ -66,8 +66,10 @@ export default function NetworkTopologyView({ data, handleAction }) {
     // Nodo 3: SentinelOS Core Master (Host Actual)
     const cpuModel = data?.system?.cpu_model || 'Intel/AMD Processor';
     const gpuModel = data?.system?.gpu?.has_gpu ? data.system.gpu.model : 'Acelerador Integrado';
-    const memTotalGb = ((data?.system?.memory?.total || 0) / 1024**3).toFixed(1);
-    const memUsedGb = ((data?.system?.memory?.used || 0) / 1024**3).toFixed(1);
+    const ramTotalGb = ((data?.system?.memory?.total || 0) / 1024**3).toFixed(1);
+    const ramUsedGb = ((data?.system?.memory?.used || 0) / 1024**3).toFixed(1);
+    const memTotalGb = ramTotalGb;
+    const memUsedGb = ramUsedGb;
     nodes.push({
       id: 'node-core-master',
       name: 'SentinelOS Core Master (Host)',

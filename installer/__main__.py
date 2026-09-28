@@ -16,15 +16,49 @@ from .banner import (
     print_success, print_warning, print_error, print_info, print_step, print_badge
 )
 from .system_detector import get_detailed_os
-from .deps_manager import ensure_python_libraries, check_and_install_docker
+from .deps_manager import ensure_python_libraries, check_and_install_docker, check_frontend_assets
 from .i18n import I18n
 from .skills import AVAILABLE_SKILLS
 from .tailscale import setup_tailscale_interactive
 from .autostart import configure_autostart, disable_autostart
 from .service_runner import start_and_verify_services
 import webbrowser
+import subprocess
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def auto_bootstrap_venv():
+    """Si se ejecuta desde el Python global, auto-repara creando y conmutando a .venv automáticamente."""
+    is_venv = (sys.prefix != getattr(sys, "base_prefix", sys.prefix))
+    if is_venv or "--no-venv-bootstrap" in sys.argv:
+        return
+
+    venv_dir = os.path.join(ROOT_DIR, ".venv")
+    if sys.platform == "win32":
+        venv_python = os.path.join(venv_dir, "Scripts", "python.exe")
+    else:
+        venv_python = os.path.join(venv_dir, "bin", "python3")
+
+    if not os.path.exists(venv_python):
+        print(f"\n{Colors.CYAN}[*] Detectado interprete Python global de sistema.{Colors.RESET}")
+        print(f"{Colors.YELLOW}[*] Auto-reparación: Creando entorno virtual aislado (.venv) para garantizar permisos y librerías...{Colors.RESET}")
+        try:
+            import venv
+            venv.create(venv_dir, with_pip=True)
+        except Exception:
+            subprocess.run([sys.executable, "-m", "venv", venv_dir], check=False)
+
+    if os.path.exists(venv_python):
+        print(f"{Colors.GREEN}[OK] Conmutando ejecucion a entorno aislado: {venv_python}{Colors.RESET}\n")
+        subprocess.run([venv_python, "-m", "ensurepip", "--upgrade"], capture_output=True)
+        subprocess.run([venv_python, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel", "-q", "--prefer-binary"], capture_output=True)
+        
+        env = os.environ.copy()
+        env["PYTHONPATH"] = ROOT_DIR
+        args = [a for a in sys.argv[1:] if a != "--no-venv-bootstrap"]
+        cmd = [venv_python, "-m", "installer", "--no-venv-bootstrap", *args]
+        res = subprocess.run(cmd, env=env)
+        sys.exit(res.returncode)
 
 def get_lan_ip() -> str:
     try:
@@ -37,6 +71,8 @@ def get_lan_ip() -> str:
         return "127.0.0.1"
 
 def main():
+    auto_bootstrap_venv()
+
     # -------------------------------------------------------------
     # INTRODUCCIÓN ANIMADA
     # -------------------------------------------------------------
@@ -72,6 +108,7 @@ def main():
     # -------------------------------------------------------------
     print_step("Comprobando entorno base y librerías..." if lang == "es" else "Checking base environment and packages...")
     ensure_python_libraries(lang)
+    check_frontend_assets(ROOT_DIR, lang)
     check_and_install_docker(os_info, lang)
     print()
 

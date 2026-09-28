@@ -28,9 +28,20 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 
+import glob
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UNLEARNED_MODEL_DIR = os.path.join(BASE_DIR, "export", "sentinel_1b_unlearned")
-ADAPTERS_DIR = os.path.join(BASE_DIR, "training", "agentic_terminal_adapters_1b")
+BASE_SNAPSHOT_DIR = r"C:\Users\mauro\.cache\huggingface\hub\models--unsloth--Llama-3.2-1B-Instruct\snapshots\5a8abab4a5d6f164389b1079fb721cfab8d7126c"
+BASE_MODEL_TO_USE = UNLEARNED_MODEL_DIR if os.path.exists(os.path.join(UNLEARNED_MODEL_DIR, "model.safetensors")) else BASE_SNAPSHOT_DIR
+
+# Buscar automáticamente el checkpoint más reciente
+checkpoint_dirs = sorted(
+    glob.glob(os.path.join(BASE_DIR, "training", "agentic_terminal_adapters_1b", "checkpoint-*")),
+    key=lambda d: int(os.path.basename(d).split("-")[-1]) if "-" in os.path.basename(d) and os.path.basename(d).split("-")[-1].isdigit() else 0
+)
+ADAPTERS_DIR = checkpoint_dirs[-1] if checkpoint_dirs else os.path.join(BASE_DIR, "training", "agentic_terminal_adapters_1b")
+
 MERGED_DIR = os.path.join(BASE_DIR, "export", "sentinel_agentic_1b_merged")
 OUTPUT_GGUF_DIR = os.path.join(BASE_DIR, "export", "output_gguf")
 
@@ -43,8 +54,8 @@ FINAL_Q4 = os.path.join(OUTPUT_GGUF_DIR, "sentinel-agentic-1b.Q4_K_M.gguf")
 def main():
     print("=" * 80)
     print("FUSIÓN Y COMPILACIÓN GGUF: SENTINEL-1B-PureSTEM & Terminal Operator")
-    print(f"Modelo Base: {UNLEARNED_MODEL_DIR}")
-    print(f"Adaptadores Agénticos: {ADAPTERS_DIR}")
+    print(f"Modelo Base: {BASE_MODEL_TO_USE}")
+    print(f"Adaptadores Agénticos (Checkpoint): {ADAPTERS_DIR}")
     print(f"Destino Fusionado: {MERGED_DIR}")
     print(f"Destino GGUF Final: {FINAL_Q4}")
     print("=" * 80)
@@ -52,14 +63,14 @@ def main():
     os.makedirs(MERGED_DIR, exist_ok=True)
     os.makedirs(OUTPUT_GGUF_DIR, exist_ok=True)
 
-    print("\n[1/4] Cargando modelo base desaprendido en CPU (torch.float16)...")
+    print("\n[1/4] Cargando modelo base en CPU (torch.float16)...")
     base_model = AutoModelForCausalLM.from_pretrained(
-        UNLEARNED_MODEL_DIR,
+        BASE_MODEL_TO_USE,
         torch_dtype=torch.float16,
         low_cpu_mem_usage=True,
         device_map="cpu"
     )
-    tokenizer = AutoTokenizer.from_pretrained(UNLEARNED_MODEL_DIR)
+    tokenizer = AutoTokenizer.from_pretrained(BASE_SNAPSHOT_DIR if os.path.exists(BASE_SNAPSHOT_DIR) else BASE_MODEL_TO_USE)
 
     print("[2/4] Fusionando adaptadores LoRA de terminal en los tensores base...")
     model = PeftModel.from_pretrained(base_model, ADAPTERS_DIR)

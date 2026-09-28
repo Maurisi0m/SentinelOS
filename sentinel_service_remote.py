@@ -6,8 +6,10 @@ integrating with the Obsidian knowledge vault for persistent memory and self-lea
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 import re
 import time
 import urllib.error
@@ -71,9 +73,11 @@ GREETING_PATTERNS = [
 
 def is_greeting(query: str) -> bool:
     """Detect if query is just a greeting or minimal query to prevent context pollution."""
-    q = query.lower().strip()
-    if len(q) <= 4:
+    q = re.sub(r"[^\w\s]", "", query.lower().strip())
+    if not q:
         return True
+    if q in ["ls", "df", "ps", "pwd", "top", "free", "ip", "cat", "git", "reboot", "uptime"]:
+        return False
     return any(re.search(pat, q) for pat in GREETING_PATTERNS)
 
 
@@ -190,6 +194,20 @@ async def chat_with_sentinel_stream(
 
     try:
         last_user_msg = messages[-1]["content"] if messages else ""
+        if is_greeting(last_user_msg):
+            greetings = [
+                "Saludos. Sistema SENTINEL activo y listo. ¿En qué concepto técnico, fórmula matemática o comando del servidor deseas trabajar hoy?",
+                "Hola. Bóveda cognitiva y herramientas de ingeniería sincronizadas. ¿Qué proyecto o duda técnica abordamos hoy?",
+                "Bienvenido al Laboratorio STEM. Todos los subsistemas operativos. ¿En qué te puedo asesorar hoy?"
+            ]
+            chosen = random.choice(greetings)
+            tokens = re.split(r'(\s+)', chosen)
+            for t in tokens:
+                if t:
+                    yield t
+                    await asyncio.sleep(0.015)
+            return
+
         vault_ctx = get_vault_context(last_user_msg)
 
         # 1. Effort parameter configuration and dynamic model routing

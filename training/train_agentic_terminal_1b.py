@@ -7,9 +7,8 @@ Reentrenamiento Agéntico de Alta Intensidad: SENTINEL-1B-PureSTEM & Terminal Op
 - Datasets Consolidados:
   1. dataset/cross_platform_terminal_dataset.jsonl (ReAct de terminal multiplataforma)
   2. dataset/terminal_corpus/sample_validation.jsonl (muestras maestras de terminal)
-  3. dataset/terminal_corpus/terminal_dataset_000.jsonl (subconjunto diverso de shards de 1 GB)
+  3. dataset/terminal_corpus/terminal_dataset_*.jsonl (11 shards completos de 1.00 GB - 559,156 muestras)
   4. dataset/unlearning_comprehensive_corpus.jsonl (pivotes deterministas de rechazo a no-STEM)
-  5. dataset/pure_stem_1b_structured.jsonl (retención de conocimientos puros STEM)
 - Optimización: QLoRA 4-bit NF4, Rank 64, Alpha 128, Paged AdamW 8-bit en RTX 5060 Laptop (8GB VRAM)
 - Protocolo: Ciclo ReAct plano [THOUGHT] ... [/THOUGHT] [EXECUTE] ... [/EXECUTE] [OUTPUT] ... [/OUTPUT]
 """
@@ -26,6 +25,7 @@ if 'bz2' not in sys.modules or not hasattr(sys.modules.get('bz2', object), 'open
     sys.modules['_bz2'] = fake_bz2
 
 import os
+import glob
 import json
 import torch
 from torch.utils.data import Dataset
@@ -61,10 +61,10 @@ SYSTEM_PROMPT = (
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 class ConsolidatedSentinelDataset(Dataset):
-    def __init__(self, tokenizer, max_length=1024, max_shard_samples=3000):
+    def __init__(self, tokenizer, max_length=1024):
         self.tokenizer = tokenizer
         self.max_length = max_length
-        self.samples = []
+        self.seed_samples = []
 
         # 1. Cargar trayectorias seed multiplataforma
         cross_platform_path = os.path.join(BASE_DIR, "dataset", "cross_platform_terminal_dataset.jsonl")
@@ -77,20 +77,21 @@ class ConsolidatedSentinelDataset(Dataset):
                     traj = item.get("trajectory", [])
                     if traj:
                         messages = [{"role": "system", "content": SYSTEM_PROMPT}] + traj
-                        self.samples.append(messages)
+                        self.seed_samples.append(messages)
 
         # 2. Cargar muestra dorada validada
         validation_sample_path = os.path.join(BASE_DIR, "dataset", "terminal_corpus", "sample_validation.jsonl")
         if os.path.exists(validation_sample_path):
+            print(f"Cargando muestras doradas desde {validation_sample_path}...", flush=True)
             with open(validation_sample_path, "r", encoding="utf-8") as f:
                 for line in f:
                     if not line.strip(): continue
                     item = json.loads(line)
                     user_req = item.get("user_request", "")
-                    cmds = " && ".join(item.get("commands", []))
+                    cmds = " && ".join(item.get("commands", [])) if isinstance(item.get("commands"), list) else str(item.get("commands", ""))
                     out = item.get("expected_output", "")
                     exp = item.get("explanation", "")
-                    analysis = " ".join(item.get("analysis", []))
+                    analysis = " ".join(item.get("analysis", [])) if isinstance(item.get("analysis"), list) else str(item.get("analysis", ""))
                     messages = [
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": user_req},
@@ -98,36 +99,9 @@ class ConsolidatedSentinelDataset(Dataset):
                         {"role": "environment", "content": f"[OUTPUT]\n{out}\n[/OUTPUT]"},
                         {"role": "assistant", "content": exp}
                     ]
-                    self.samples.append(messages)
+                    self.seed_samples.append(messages)
 
-        # 3. Cargar subconjunto diverso del shard 000 de 1 GB
-        shard_path = os.path.join(BASE_DIR, "dataset", "terminal_corpus", "terminal_dataset_000.jsonl")
-        if os.path.exists(shard_path):
-            print(f"Cargando {max_shard_samples} muestras representativas desde {shard_path}...", flush=True)
-            loaded_shard = 0
-            with open(shard_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if not line.strip(): continue
-                    item = json.loads(line)
-                    if "dataset" in item: continue # Saltar metadatos
-                    user_req = item.get("user_request", "")
-                    cmds = " && ".join(item.get("commands", []))
-                    out = item.get("expected_output", "")
-                    exp = item.get("explanation", "")
-                    analysis = " ".join(item.get("analysis", []))
-                    messages = [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": user_req},
-                        {"role": "assistant", "content": f"[THOUGHT] {analysis} [/THOUGHT]\n[EXECUTE] {cmds} [/EXECUTE]"},
-                        {"role": "environment", "content": f"[OUTPUT]\n{out}\n[/OUTPUT]"},
-                        {"role": "assistant", "content": exp}
-                    ]
-                    self.samples.append(messages)
-                    loaded_shard += 1
-                    if loaded_shard >= max_shard_samples:
-                        break
-
-        # 4. Cargar pivotes deterministas de desaprendizaje (Rechazo a no-STEM)
+        # 3. Cargar pivotes deterministas de desaprendizaje (Rechazo a no-STEM)
         unlearning_path = os.path.join(BASE_DIR, "dataset", "unlearning_comprehensive_corpus.jsonl")
         if os.path.exists(unlearning_path):
             print(f"Cargando pivotes de contención desde {unlearning_path}...", flush=True)
@@ -142,15 +116,51 @@ class ConsolidatedSentinelDataset(Dataset):
                         {"role": "user", "content": inst},
                         {"role": "assistant", "content": pivot}
                     ]
-                    self.samples.append(messages)
+                    self.seed_samples.append(messages)
 
-        print(f"Total consolidado de muestras de entrenamiento: {len(self.samples)}", flush=True)
+        # 4. Indexar Shards de 1 GB (terminal_dataset_*.jsonl)
+        self.shard_files = sorted(glob.glob(os.path.join(BASE_DIR, "dataset", "terminal_corpus", "terminal_dataset_*.jsonl")))
+        print(f"Indexando {len(self.shard_files)} shards del corpus de 1.00 GB...", flush=True)
+        self.shard_offsets = []
+        for s_idx, sf in enumerate(self.shard_files):
+            with open(sf, "rb") as f:
+                offset = f.tell()
+                line = f.readline()
+                while line:
+                    if line.strip() and not line.startswith(b'{"dataset"'):
+                        self.shard_offsets.append((s_idx, offset))
+                    offset = f.tell()
+                    line = f.readline()
+
+        self.file_handles = [open(sf, "r", encoding="utf-8") for sf in self.shard_files]
+        self.total_samples = len(self.seed_samples) + len(self.shard_offsets)
+        print(f"¡Dataset consolidado listo! Total de muestras: {self.total_samples} (1.00 GB de corpus terminal + seed)", flush=True)
 
     def __len__(self):
-        return len(self.samples)
+        return self.total_samples
 
     def __getitem__(self, idx):
-        messages = self.samples[idx]
+        if idx < len(self.seed_samples):
+            messages = self.seed_samples[idx]
+        else:
+            s_idx, off = self.shard_offsets[idx - len(self.seed_samples)]
+            fh = self.file_handles[s_idx]
+            fh.seek(off)
+            line = fh.readline()
+            item = json.loads(line)
+            user_req = item.get("user_request", "")
+            cmds = " && ".join(item.get("commands", [])) if isinstance(item.get("commands"), list) else str(item.get("commands", ""))
+            out = item.get("expected_output", "")
+            exp = item.get("explanation", "")
+            analysis = " ".join(item.get("analysis", [])) if isinstance(item.get("analysis"), list) else str(item.get("analysis", ""))
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_req},
+                {"role": "assistant", "content": f"[THOUGHT] {analysis} [/THOUGHT]\n[EXECUTE] {cmds} [/EXECUTE]"},
+                {"role": "environment", "content": f"[OUTPUT]\n{out}\n[/OUTPUT]"},
+                {"role": "assistant", "content": exp}
+            ]
+
         text = self.tokenizer.apply_chat_template(
             messages,
             tokenize=False,
@@ -216,7 +226,7 @@ def main():
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
-    dataset = ConsolidatedSentinelDataset(tokenizer, max_length=1024, max_shard_samples=3000)
+    dataset = ConsolidatedSentinelDataset(tokenizer, max_length=1024)
     collator = DataCollatorForSeq2Seq(tokenizer, pad_to_multiple_of=8, return_tensors="pt", padding=True)
 
     training_args = TrainingArguments(
@@ -225,15 +235,19 @@ def main():
         gradient_accumulation_steps=4,
         learning_rate=2e-4,
         logging_steps=10,
-        num_train_epochs=2,
-        warmup_steps=20,
+        logging_first_step=True,
+        num_train_epochs=1,
+        warmup_steps=30,
         fp16=False,
         bf16=True,
-        save_strategy="no",
+        save_strategy="steps",
+        save_steps=250,
+        save_total_limit=3,
         dataloader_num_workers=0,
         report_to="none",
         gradient_checkpointing=True,
         optim="paged_adamw_8bit",
+        lr_scheduler_type="cosine"
     )
 
     trainer = Trainer(
@@ -244,6 +258,7 @@ def main():
     )
 
     print("\n[GPU READY] Lanzando ciclo de entrenamiento en NVIDIA GeForce RTX 5060 Laptop...")
+    print(f"Total de iteraciones por epoch: {len(dataset) // (2 * 4)} pasos")
     trainer.train()
 
     print(f"\nGuardando adaptadores agénticos de terminal en {OUTPUT_ADAPTERS_DIR}...")

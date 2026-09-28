@@ -40,8 +40,43 @@ def check_command(cmd: str) -> str:
                 return cand
     return ""
 
+def check_frontend_assets(root_dir: str, lang="es") -> bool:
+    """Verifica si los recursos estáticos del frontend ya están pre-compilados en dist/.
+    Informa al usuario si es necesario o no contar con Node.js / npm / Vite."""
+    dist_dir = os.path.join(root_dir, "labsentinel_backend", "dist")
+    index_html = os.path.join(dist_dir, "index.html")
+
+    if os.path.exists(index_html):
+        msg_ok = "Interfaz web (Cockpit) pre-compilada detectada en labsentinel_backend/dist/." if lang == "es" else "Pre-compiled web interface (Cockpit) detected in labsentinel_backend/dist/."
+        print_success(msg_ok)
+        msg_info = "No se requiere Node.js, npm ni Vite. El servidor web entrega la interfaz directamente en el puerto 8001." if lang == "es" else "Node.js, npm, and Vite are NOT required. The backend serves pre-compiled assets directly on port 8001."
+        print_info(msg_info)
+        return True
+
+    msg_warn = "No se encontro la carpeta dist/ pre-compilada en labsentinel_backend/." if lang == "es" else "Pre-compiled dist/ directory not found in labsentinel_backend/."
+    print_warning(msg_warn)
+
+    # Intentar compilar si npm está disponible
+    npm_bin = shutil.which("npm")
+    frontend_dir = os.path.join(root_dir, "frontend")
+    if npm_bin and os.path.exists(frontend_dir):
+        print_step("Auto-reparación: Compilando interfaz gráfica con npm y Vite..." if lang == "es" else "Self-healing: Building frontend interface with npm and Vite...")
+        try:
+            res = subprocess.run([npm_bin, "run", "build"], cwd=frontend_dir, capture_output=True, text=True, timeout=120)
+            built_dist = os.path.join(frontend_dir, "dist")
+            if os.path.exists(os.path.join(built_dist, "index.html")):
+                os.makedirs(dist_dir, exist_ok=True)
+                shutil.copytree(built_dist, dist_dir, dirs_exist_ok=True)
+                print_success("Frontend compilado y vinculado exitosamente a labsentinel_backend/dist/." if lang == "es" else "Frontend successfully compiled and linked to labsentinel_backend/dist/.")
+                return True
+        except Exception as e:
+            print_warning(f"Aviso en compilación de frontend: {e}")
+
+    print_info("La interfaz gráfica puede ejecutarse con los archivos estáticos empaquetados en el repositorio." if lang == "es" else "The UI can run with static assets packaged in the repository.")
+    return False
+
 def ensure_python_libraries(lang="es") -> bool:
-    """Verifica e instala dependencias de Python con auto-reparación y soporte PEP 668."""
+    """Verifica e instala dependencias de Python con auto-reparación multi-fase y soporte multiplataforma."""
     required = ["fastapi", "uvicorn", "aiohttp", "requests", "psutil", "pydantic"]
     missing = []
     
@@ -56,31 +91,100 @@ def ensure_python_libraries(lang="es") -> bool:
         print_success(msg)
         return True
 
-    msg_install = f"Librerías faltantes detectadas: {', '.join(missing)}. Instalando con auto-reparación..." if lang == "es" else f"Missing packages detected: {', '.join(missing)}. Installing with self-healing..."
+    msg_install = f"Librerías faltantes detectadas: {', '.join(missing)}. Iniciando auto-reparación..." if lang == "es" else f"Missing packages detected: {', '.join(missing)}. Initiating self-healing..."
     print_step(msg_install)
 
-    # Intento 1: pip install con --break-system-packages (indispensable en uv y Debian 12 / Ubuntu 24.04)
-    cmd1 = [sys.executable, "-m", "pip", "install", "--break-system-packages", *missing]
+    # 0. Asegurar que pip esté presente y funcional en el entorno
     try:
-        res = subprocess.run(cmd1, capture_output=True, text=True, timeout=60)
-        if res.returncode == 0:
-            print_success("Librerías instaladas exitosamente." if lang == "es" else "Libraries installed successfully.")
+        pip_check = subprocess.run([sys.executable, "-m", "pip", "--version"], capture_output=True, text=True)
+        if pip_check.returncode != 0:
+            print_warning("Auto-reparación: Módulo pip no detectado en el entorno. Inicializando con ensurepip..." if lang == "es" else "Self-healing: pip module not detected. Bootstrapping with ensurepip...")
+            subprocess.run([sys.executable, "-m", "ensurepip", "--upgrade"], capture_output=True)
+    except Exception:
+        pass
+
+    is_venv = (sys.prefix != getattr(sys, "base_prefix", sys.prefix))
+    extra_flags = []
+    # Solo agregar --break-system-packages si es Linux, fuera de venv y PEP 668 está activo
+    if not is_venv and sys.platform != "win32":
+        try:
+            test_pip = subprocess.run([sys.executable, "-m", "pip", "install", "--help"], capture_output=True, text=True)
+            if "--break-system-packages" in test_pip.stdout:
+                extra_flags.append("--break-system-packages")
+        except Exception:
+            pass
+
+    # Intento 1: Ruedas binarias pre-compiladas directas (--prefer-binary)
+    cmd1 = [sys.executable, "-m", "pip", "install", "--prefer-binary", *extra_flags, *missing]
+    try:
+        res1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=90)
+        if res1.returncode == 0:
+            try:
+                import site, importlib
+                site.main()
+                importlib.invalidate_caches()
+            except Exception:
+                pass
+            print_success("Librerías instaladas exitosamente con ruedas binarias pre-compiladas." if lang == "es" else "Libraries installed successfully with pre-compiled wheels.")
             return True
     except Exception:
         pass
 
-    # Intento 2: Fallback con --prefer-binary
-    print_warning("Auto-reparación: Reintentando instalación con modo binario..." if lang == "es" else "Self-healing: Retrying with binary wheels...")
-    cmd2 = [sys.executable, "-m", "pip", "install", "--prefer-binary", "--break-system-packages", *missing]
+    # Intento 2: Red protegida / Fallback con hosts de confianza por si hay proxies o inspección SSL
+    print_warning("Auto-reparación: Reintentando instalación con hosts de confianza y timeout ampliado..." if lang == "es" else "Self-healing: Retrying with trusted hosts and extended timeout...")
+    cmd2 = [
+        sys.executable, "-m", "pip", "install",
+        "--prefer-binary",
+        "--trusted-host", "pypi.org",
+        "--trusted-host", "files.pythonhosted.org",
+        "--trusted-host", "pypi.python.org",
+        "--timeout", "90",
+        *extra_flags,
+        *missing
+    ]
     try:
-        res = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
-        if res.returncode == 0:
+        res2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=120)
+        if res2.returncode == 0:
+            try:
+                import site, importlib
+                site.main()
+                importlib.invalidate_caches()
+            except Exception:
+                pass
             print_success("Librerías instaladas y verificadas." if lang == "es" else "Libraries installed and verified.")
             return True
     except Exception:
         pass
 
-    # Verificación final individual
+    # Intento 3: Instalación granular paquete por paquete
+    print_warning("Auto-reparación: Intentando instalación granular individual por paquete..." if lang == "es" else "Self-healing: Attempting individual package-by-package installation...")
+    for pkg in missing:
+        try:
+            pkg_cmd = [sys.executable, "-m", "pip", "install", "--prefer-binary", *extra_flags, pkg]
+            if pkg == "psutil" and sys.platform == "win32":
+                pkg_cmd = [sys.executable, "-m", "pip", "install", "--only-binary=:all:", pkg]
+            subprocess.run(pkg_cmd, capture_output=True, text=True, timeout=45)
+        except Exception:
+            pass
+
+    # Intento 4: Si se ejecuta fuera de venv y hubo error de permisos, intentar --user
+    if not is_venv:
+        try:
+            print_warning("Auto-reparación: Instalando en el espacio de usuario local (--user)..." if lang == "es" else "Self-healing: Installing into user space (--user)...")
+            cmd_user = [sys.executable, "-m", "pip", "install", "--user", "--prefer-binary", *missing]
+            subprocess.run(cmd_user, capture_output=True, text=True, timeout=90)
+        except Exception:
+            pass
+
+    # Refrescar rutas de importación de Python
+    try:
+        import site, importlib
+        site.main()
+        importlib.invalidate_caches()
+    except Exception:
+        pass
+
+    # Verificación final individual de importación
     still_missing = []
     for pkg in missing:
         try:
@@ -89,11 +193,12 @@ def ensure_python_libraries(lang="es") -> bool:
             still_missing.append(pkg)
 
     if not still_missing:
-        print_success("Todas las librerías se cargaron correctamente." if lang == "es" else "All packages loaded successfully.")
+        print_success("Todas las librerías se cargaron y verificaron correctamente." if lang == "es" else "All packages loaded and verified successfully.")
         return True
     else:
         err_msg = f"No se pudieron cargar automáticamente: {', '.join(still_missing)}" if lang == "es" else f"Could not auto-load: {', '.join(still_missing)}"
         print_error(err_msg)
+        print_info(f"Sugerencia de auto-reparación manual: Ejecuta '{sys.executable} -m pip install {' '.join(still_missing)}'")
         return False
 
 def check_and_install_docker(os_info: dict, lang="es") -> tuple[bool, str]:
