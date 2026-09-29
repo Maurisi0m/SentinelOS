@@ -514,6 +514,26 @@ function App() {
   const [printerHistory, setPrinterHistory] = useState(null);
   const terminalRef = React.useRef(null);
   const installTerminalRef = React.useRef(null);
+
+  // Persistent Multi-Server Web Terminals State
+  const [terminalTabs, setTerminalTabs] = useState(() => [
+    {
+      id: 'term-local',
+      serverId: 'local',
+      serverName: 'Host Maestro (Local)',
+      title: 'Host Maestro',
+      fontSize: 14,
+      status: 'connecting',
+      sessionId: 'sentinel-local-main'
+    }
+  ]);
+  const [activeTerminalTabId, setActiveTerminalTabId] = useState('term-local');
+  const [isFullscreenTerminal, setIsFullscreenTerminal] = useState(false);
+  const [showNewTerminalModal, setShowNewTerminalModal] = useState(false);
+
+  // References for Web Terminals
+  const webTerminalContainerRefs = React.useRef({});
+  const webTerminalInstances = React.useRef({});
   
   // Refs to store actual xterm instances and websockets for sandbox sessions
   const sandboxTerminalsRef = React.useRef({});
@@ -693,37 +713,237 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
+  // Manejo del ciclo de vida de las terminales Web persistentes (Multi-Servidor)
   useEffect(() => {
-    if (activeTab === 'web-terminal' && terminalRef.current) {
-      if (terminalRef.current.childElementCount > 0) return;
+    terminalTabs.forEach(tab => {
+      const el = webTerminalContainerRefs.current[tab.id];
+      if (!el) return;
+
+      // Si la terminal ya existe para esta pestaña, sincronizar configuración si cambió
+      if (webTerminalInstances.current[tab.id]) {
+        const existing = webTerminalInstances.current[tab.id];
+        if (existing.term && existing.term.options.fontSize !== tab.fontSize) {
+          existing.term.options.fontSize = tab.fontSize;
+          existing.fitAddon.fit();
+        }
+        return;
+      }
+
+      // Crear nueva instancia de xterm.js con tema cyberpunk / oscuro premium
       const term = new TerminalXTerm({
-        theme: { background: '#0f172a', foreground: '#e2e8f0', cursor: '#f59e0b' },
-        fontFamily: 'monospace', fontSize: 14
+        theme: {
+          background: '#070b14',
+          foreground: '#e2e8f0',
+          cursor: '#38bdf8',
+          cursorAccent: '#070b14',
+          selectionBackground: 'rgba(56, 189, 248, 0.35)',
+          black: '#0f172a',
+          red: '#ef4444',
+          green: '#10b981',
+          yellow: '#f59e0b',
+          blue: '#3b82f6',
+          magenta: '#a855f7',
+          cyan: '#06b6d4',
+          white: '#f8fafc',
+          brightBlack: '#475569',
+          brightRed: '#f87171',
+          brightGreen: '#34d399',
+          brightYellow: '#fbbf24',
+          brightBlue: '#60a5fa',
+          brightMagenta: '#c084fc',
+          brightCyan: '#22d3ee',
+          brightWhite: '#ffffff'
+        },
+        fontFamily: 'Consolas, "Fira Code", monospace',
+        fontSize: tab.fontSize || 14,
+        lineHeight: 1.25,
+        cursorBlink: true,
+        cursorStyle: 'block',
+        allowTransparency: true
       });
+
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
-      term.open(terminalRef.current);
+      term.open(el);
       fitAddon.fit();
 
+      // Determinar WebSocket URL según si es el Host local o un Servidor Remoto de la malla
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws/terminal`);
-      ws.onopen = () => { ws.send(`RESIZE:${term.cols}:${term.rows}`); };
-      ws.onmessage = (e) => { term.write(e.data); };
-      term.onData(data => { if (ws.readyState === WebSocket.OPEN) ws.send(data); });
-      
-      const resizeObserver = new ResizeObserver(() => {
-        fitAddon.fit();
-        if (ws.readyState === WebSocket.OPEN) ws.send(`RESIZE:${term.cols}:${term.rows}`);
-      });
-      resizeObserver.observe(terminalRef.current);
+      let wsUrl = '';
+      if (tab.serverId === 'local') {
+        wsUrl = `${protocol}//${window.location.host}/api/ws/terminal?session_id=${tab.sessionId}`;
+      } else {
+        const srv = connectedServers.find(s => s.id === tab.serverId);
+        if (srv && srv.url) {
+          // Utilizar el proxy de terminal del backend para evitar problemas de CORS o puertos
+          wsUrl = `${protocol}//${window.location.host}/api/ws/terminal/proxy?target_url=${encodeURIComponent(srv.url)}&session_id=${tab.sessionId}&token=${encodeURIComponent(srv.token || '')}`;
+        } else {
+          wsUrl = `${protocol}//${window.location.host}/api/ws/terminal?session_id=${tab.sessionId}`;
+        }
+      }
 
-      return () => {
-        ws.close();
-        resizeObserver.disconnect();
-        term.dispose();
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        setTerminalTabs(prev => prev.map(t => t.id === tab.id ? { ...t, status: 'connected' } : t));
+        ws.send(`RESIZE:${term.cols}:${term.rows}`);
       };
+
+      ws.onmessage = (e) => {
+        term.write(e.data);
+      };
+
+      ws.onerror = () => {
+        setTerminalTabs(prev => prev.map(t => t.id === tab.id ? { ...t, status: 'error' } : t));
+      };
+
+      ws.onclose = () => {
+        setTerminalTabs(prev => prev.map(t => t.id === tab.id ? { ...t, status: 'disconnected' } : t));
+      };
+
+      term.onData(data => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(data);
+        }
+      });
+
+      const ro = new ResizeObserver(() => {
+        try {
+          fitAddon.fit();
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(`RESIZE:${term.cols}:${term.rows}`);
+          }
+        } catch (e) {}
+      });
+      ro.observe(el);
+
+      webTerminalInstances.current[tab.id] = { term, fitAddon, ws, ro };
+    });
+  }, [terminalTabs, connectedServers]);
+
+  // Sincronizar foco y redimensionado al volver a la sección 'web-terminal' desde cualquier otra parte
+  useEffect(() => {
+    if (activeTab === 'web-terminal' && activeTerminalTabId) {
+      const activeInstance = webTerminalInstances.current[activeTerminalTabId];
+      if (activeInstance) {
+        const timer = setTimeout(() => {
+          try {
+            activeInstance.fitAddon.fit();
+            activeInstance.term.focus();
+            if (activeInstance.ws && activeInstance.ws.readyState === WebSocket.OPEN) {
+              activeInstance.ws.send(`RESIZE:${activeInstance.term.cols}:${activeInstance.term.rows}`);
+            }
+          } catch (e) {}
+        }, 60);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [activeTab]);
+  }, [activeTab, activeTerminalTabId]);
+
+  const handleAddTerminalTab = (server) => {
+    const srvId = server.id;
+    const isLoc = server.isLocal || srvId === 'local';
+    const newTabId = `term-${srvId}-${Date.now()}`;
+    const newSessionId = `sentinel-${srvId}-${Date.now()}`;
+    const newTab = {
+      id: newTabId,
+      serverId: srvId,
+      serverName: server.name || (isLoc ? 'Host Maestro' : 'Servidor Remoto'),
+      title: server.name || (isLoc ? 'Host Maestro' : 'Servidor Remoto'),
+      fontSize: 14,
+      status: 'connecting',
+      sessionId: newSessionId
+    };
+    setTerminalTabs(prev => [...prev, newTab]);
+    setActiveTerminalTabId(newTabId);
+    setShowNewTerminalModal(false);
+  };
+
+  const handleCloseTerminalTab = (tabId, e) => {
+    if (e) e.stopPropagation();
+    const inst = webTerminalInstances.current[tabId];
+    if (inst) {
+      try {
+        if (inst.ro) inst.ro.disconnect();
+        if (inst.ws) inst.ws.close();
+        if (inst.term) inst.term.dispose();
+      } catch (err) {}
+      delete webTerminalInstances.current[tabId];
+    }
+    delete webTerminalContainerRefs.current[tabId];
+
+    const tabObj = terminalTabs.find(t => t.id === tabId);
+    if (tabObj) {
+      try {
+        fetch(`${API_URL}/terminal/session/terminate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: tabObj.sessionId })
+        }).catch(() => {});
+      } catch (e) {}
+    }
+
+    setTerminalTabs(prev => {
+      const filtered = prev.filter(t => t.id !== tabId);
+      if (activeTerminalTabId === tabId) {
+        if (filtered.length > 0) {
+          setActiveTerminalTabId(filtered[0].id);
+        } else {
+          const newId = `term-local-${Date.now()}`;
+          setActiveTerminalTabId(newId);
+          return [{
+            id: newId,
+            serverId: 'local',
+            serverName: 'Host Maestro (Local)',
+            title: 'Host Maestro',
+            fontSize: 14,
+            status: 'connecting',
+            sessionId: `sentinel-local-${Date.now()}`
+          }];
+        }
+      }
+      return filtered;
+    });
+  };
+
+  const handleReconnectActiveTerminal = () => {
+    const tab = terminalTabs.find(t => t.id === activeTerminalTabId);
+    if (!tab) return;
+    const inst = webTerminalInstances.current[tab.id];
+    if (inst) {
+      try {
+        if (inst.ro) inst.ro.disconnect();
+        if (inst.ws) inst.ws.close();
+        if (inst.term) inst.term.dispose();
+      } catch (e) {}
+      delete webTerminalInstances.current[tab.id];
+    }
+    setTerminalTabs(prev => prev.map(t => t.id === tab.id ? { ...t, status: 'connecting' } : t));
+  };
+
+  const handleClearActiveTerminal = () => {
+    const inst = webTerminalInstances.current[activeTerminalTabId];
+    if (inst && inst.term) {
+      inst.term.clear();
+    }
+  };
+
+  const handleRestartActiveTerminal = () => {
+    const inst = webTerminalInstances.current[activeTerminalTabId];
+    if (inst && inst.ws && inst.ws.readyState === WebSocket.OPEN) {
+      inst.ws.send("__SENTINEL_RESTART__");
+    }
+  };
+
+  const handleChangeFontSize = (delta) => {
+    setTerminalTabs(prev => prev.map(t => {
+      if (t.id === activeTerminalTabId) {
+        const newSize = Math.max(11, Math.min(22, (t.fontSize || 14) + delta));
+        return { ...t, fontSize: newSize };
+      }
+      return t;
+    }));
+  };
 
   useEffect(() => {
     let ws;
@@ -4283,13 +4503,275 @@ function App() {
           {activeTab === 'network' && renderNetwork()}
           {activeTab === 'marketplace' && renderMarketplace()}
           {activeTab === 'sandbox' && renderSandbox()}
-          {activeTab === 'logs' && renderLogs()}
-          {activeTab === 'web-terminal' && (
-            <div className="glass-panel" style={{height: '85vh', display: 'flex', flexDirection: 'column'}}>
-              <div className="panel-header" style={{marginBottom: '0.5rem'}}><TerminalSquare size={24}/><h2>Root Terminal (Bash)</h2></div>
-              <div ref={terminalRef} style={{flex: 1, padding: '0.5rem', background: '#0f172a', borderRadius: '8px', overflow: 'hidden'}} />
+          {/* Persistent Multi-Server Web Terminal View (NEVER unmounted to preserve running processes, background output, and terminal state) */}
+          <div style={{
+            display: activeTab === 'web-terminal' ? 'flex' : 'none',
+            flex: 1,
+            flexDirection: 'column',
+            height: isFullscreenTerminal ? '100vh' : '85vh',
+            position: isFullscreenTerminal ? 'fixed' : 'relative',
+            top: isFullscreenTerminal ? 0 : 'auto',
+            left: isFullscreenTerminal ? 0 : 'auto',
+            right: isFullscreenTerminal ? 0 : 'auto',
+            bottom: isFullscreenTerminal ? 0 : 'auto',
+            zIndex: isFullscreenTerminal ? 99999 : 'auto',
+            background: isFullscreenTerminal ? '#030712' : 'transparent',
+            padding: isFullscreenTerminal ? '1rem' : 0
+          }}>
+            <div className="glass-panel" style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              padding: 0,
+              overflow: 'hidden',
+              borderRadius: isFullscreenTerminal ? '0' : '10px',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
+            }}>
+              {/* Barra Superior de la Terminal Multi-Servidor */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.6rem 0.9rem',
+                background: 'rgba(15, 23, 42, 0.95)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                flexWrap: 'wrap',
+                gap: '0.6rem'
+              }}>
+                {/* Controles de ventana Mac y Pestañas de Servidores */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', flex: 1 }}>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+                    <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+                    <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                  </div>
+
+                  {/* Pestañas de Terminales */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    {terminalTabs.map(tab => {
+                      const isActive = tab.id === activeTerminalTabId;
+                      const statusColor = tab.status === 'connected' ? '#10b981' : tab.status === 'connecting' ? '#f59e0b' : '#ef4444';
+                      return (
+                        <div
+                          key={tab.id}
+                          onClick={() => setActiveTerminalTabId(tab.id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.45rem',
+                            padding: '0.35rem 0.75rem',
+                            borderRadius: '6px',
+                            background: isActive ? 'rgba(59, 130, 246, 0.22)' : 'rgba(255, 255, 255, 0.04)',
+                            border: isActive ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.08)',
+                            color: isActive ? '#f8fafc' : '#94a3b8',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            userSelect: 'none',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: statusColor, display: 'inline-block' }} />
+                          <Server size={12} color={isActive ? '#60a5fa' : '#64748b'} />
+                          <span>{tab.title}</span>
+                          <span style={{
+                            fontSize: '0.62rem',
+                            padding: '1px 4px',
+                            borderRadius: '3px',
+                            background: 'rgba(0,0,0,0.3)',
+                            color: '#cbd5e1'
+                          }}>
+                            {tab.serverId === 'local' ? 'LOCAL' : 'REMOTO'}
+                          </span>
+                          {terminalTabs.length > 1 && (
+                            <button
+                              onClick={(e) => handleCloseTerminalTab(tab.id, e)}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#94a3b8',
+                                cursor: 'pointer',
+                                padding: '1px',
+                                marginLeft: '2px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                borderRadius: '3px'
+                              }}
+                              title="Cerrar terminal"
+                            >
+                              <X size={12} />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {/* Botón para Añadir Nueva Terminal */}
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        onClick={() => setShowNewTerminalModal(!showNewTerminalModal)}
+                        className="btn btn-secondary"
+                        style={{ padding: '0.3rem 0.55rem', fontSize: '0.74rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        title="Abrir nueva sesión de terminal"
+                      >
+                        <Plus size={12} />
+                        <span>Nueva Terminal</span>
+                        <ChevronDown size={11} />
+                      </button>
+
+                      {/* Dropdown de Selección de Servidor para Nueva Terminal */}
+                      {showNewTerminalModal && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          marginTop: '4px',
+                          background: 'rgba(15, 23, 42, 0.98)',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          borderRadius: '8px',
+                          boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                          zIndex: 1000,
+                          minWidth: '220px',
+                          padding: '0.4rem'
+                        }}>
+                          <div style={{ padding: '0.35rem 0.5rem', fontSize: '0.7rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                            Conectar Terminal a:
+                          </div>
+                          {connectedServers.map(srv => (
+                            <div
+                              key={srv.id}
+                              onClick={() => handleAddTerminalTab(srv)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.45rem 0.6rem',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '0.78rem',
+                                color: '#e2e8f0',
+                                transition: 'background 0.15s ease'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'}
+                              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                            >
+                              <Server size={13} color="#38bdf8" />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 600 }}>{srv.name}</div>
+                                <div style={{ fontSize: '0.68rem', color: '#64748b' }}>{srv.isLocal ? 'Host Maestro (Local)' : (srv.url || 'Satélite')}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Acciones de la Terminal Activa */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                  {/* Botones de zoom de fuente */}
+                  <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.4)', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <button
+                      onClick={() => handleChangeFontSize(-1)}
+                      style={{ background: 'transparent', border: 'none', color: '#94a3b8', padding: '0.25rem 0.4rem', cursor: 'pointer', fontSize: '0.72rem' }}
+                      title="Reducir fuente"
+                    >
+                      A-
+                    </button>
+                    <span style={{ fontSize: '0.68rem', color: '#64748b', padding: '0 2px' }}>
+                      {terminalTabs.find(t => t.id === activeTerminalTabId)?.fontSize || 14}px
+                    </span>
+                    <button
+                      onClick={() => handleChangeFontSize(1)}
+                      style={{ background: 'transparent', border: 'none', color: '#94a3b8', padding: '0.25rem 0.4rem', cursor: 'pointer', fontSize: '0.72rem' }}
+                      title="Aumentar fuente"
+                    >
+                      A+
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={handleClearActiveTerminal}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    title="Limpiar pantalla"
+                  >
+                    <Trash2 size={11} />
+                    <span>Limpiar</span>
+                  </button>
+
+                  <button
+                    onClick={handleReconnectActiveTerminal}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    title="Reconectar sesión"
+                  >
+                    <RefreshCw size={11} color="#38bdf8" />
+                    <span>Reconectar</span>
+                  </button>
+
+                  <button
+                    onClick={handleRestartActiveTerminal}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    title="Reiniciar shell"
+                  >
+                    <Zap size={11} color="#f59e0b" />
+                    <span>Reiniciar Shell</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsFullscreenTerminal(!isFullscreenTerminal)}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    title={isFullscreenTerminal ? "Salir de pantalla completa" : "Pantalla completa"}
+                  >
+                    {isFullscreenTerminal ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Contenedores de Terminales DOM (Uno por cada pestaña, solo la activa visible) */}
+              <div style={{ flex: 1, position: 'relative', background: '#070b14', overflow: 'hidden' }}>
+                {terminalTabs.map(tab => (
+                  <div
+                    key={tab.id}
+                    ref={el => { webTerminalContainerRefs.current[tab.id] = el; }}
+                    style={{
+                      display: tab.id === activeTerminalTabId ? 'block' : 'none',
+                      width: '100%',
+                      height: '100%',
+                      padding: '0.65rem',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* Pie de Terminal con Notificación de Persistencia */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '0.35rem 0.9rem',
+                background: 'rgba(15, 23, 42, 0.85)',
+                borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                fontSize: '0.7rem',
+                color: '#64748b',
+                fontFamily: 'monospace'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Shield size={11} color="#10b981" />
+                  <span>Sesión persistente activa: Puedes navegar a otras pestañas sin perder tu trabajo o comandos en ejecución.</span>
+                </div>
+                <span>
+                  {terminalTabs.find(t => t.id === activeTerminalTabId)?.serverName} ({terminalTabs.find(t => t.id === activeTerminalTabId)?.serverId})
+                </span>
+              </div>
             </div>
-          )}
+          </div>
 
           {/* Persistent Sandbox Terminals (Always rendered to avoid destroying the connection, hidden with CSS) */}
           <div style={{ display: (activeTab === 'sandbox' && sandboxTab === 'command') ? 'block' : 'none', flex: 1 }}>

@@ -146,12 +146,18 @@ def auto_bootstrap_venv():
 
     # 3. Pre-instalar dependencias fundamentales directamente dentro de .venv
     print(f"{Colors.CYAN}[*] Auto-reparación: Pre-instalando librerías esenciales (fastapi, uvicorn, psutil, pydantic) en el entorno aislado...{Colors.RESET}")
+    deps = ["fastapi", "uvicorn", "aiohttp", "requests", "psutil", "pydantic", "websockets"]
+    if sys.platform == "win32":
+        deps.append("pywinpty")
+    else:
+        deps.append("ptyprocess")
+
     pip_cmd = [
         venv_python, "-m", "pip", "install",
         "--prefer-binary",
         "--trusted-host", "pypi.org",
         "--trusted-host", "files.pythonhosted.org",
-        "fastapi", "uvicorn", "aiohttp", "requests", "psutil", "pydantic"
+        *deps
     ]
     if sys.platform == "win32":
         pip_cmd.insert(4, "--only-binary=:all:")

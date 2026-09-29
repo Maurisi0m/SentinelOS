@@ -28,6 +28,10 @@ from pydantic import BaseModel
 import vault_manager
 import sentinel_service
 try:
+    import winpty
+except ImportError:
+    winpty = None
+try:
     import ptyprocess
     import fcntl
     import termios
@@ -1153,57 +1157,272 @@ def post_apt_upgrade():
     subprocess.Popen(["sudo", "apt-get", "upgrade", "-y"])
     return {"status": "started"}
 
-@app.websocket("/api/ws/terminal")
-async def websocket_terminal(websocket: WebSocket):
-    await websocket.accept()
-    if ptyprocess is None:
-        await websocket.send_text("\r\n\x1b[33m[!] Terminal interactiva PTY no disponible nativamente en Windows.\x1b[0m\r\n")
+# ==============================================================================
+# TERMINAL PTY & PERSISTENT SESSION ENGINE (CROSS-PLATFORM: WINDOWS & LINUX)
+# ==============================================================================
+class TerminalSession:
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.proc = None
+        self.is_winpty = False
+        self.is_ptyprocess = False
+        self.is_subprocess = False
+        self.buffer = deque(maxlen=300000)
+        self.subscribers = set()
+        self.last_activity = time.time()
+        self.alive = True
+        self.reader_task = None
+        self._spawn()
+
+    def _spawn(self):
+        env = os.environ.copy()
+        env["TERM"] = "xterm-256color"
+        env["COLORTERM"] = "truecolor"
+
+        # 1. Windows con pywinpty / ConPTY nativo
+        if sys.platform == "win32" and winpty is not None:
+            try:
+                ps = shutil.which("powershell.exe") or "powershell.exe"
+                self.proc = winpty.PtyProcess.spawn(f"{ps} -NoLogo", env=env)
+                self.is_winpty = True
+                self.alive = True
+                return
+            except Exception as e:
+                print(f"[TerminalSession] winpty spawn error: {e}")
+
+        # 2. Linux / macOS con ptyprocess nativo
+        if ptyprocess is not None:
+            try:
+                shell = os.environ.get("SHELL") or shutil.which("bash") or "/bin/bash"
+                self.proc = ptyprocess.PtyProcessUnicode.spawn([shell, "-i"], env=env)
+                self.is_ptyprocess = True
+                self.alive = True
+                return
+            except Exception as e:
+                print(f"[TerminalSession] ptyprocess spawn error: {e}")
+
+        # 3. Fallback de subproceso estándar
         try:
-            while True:
-                await websocket.receive_text()
-        except Exception:
-            pass
-        return
-    # Spawn bash with color terminal environment
-    env = os.environ.copy()
-    env["TERM"] = "xterm-256color"
-    env["COLORTERM"] = "truecolor"
-    p = ptyprocess.PtyProcessUnicode.spawn(['/bin/bash', '-i'], env=env)
-    
-    async def read_from_pty():
-        try:
-            while True:
-                # ptyprocess read is blocking, so we need to run in executor
-                data = await asyncio.get_event_loop().run_in_executor(None, p.read, 4096)
-                if data:
-                    await websocket.send_text(data)
+            shell_cmd = ["powershell.exe", "-NoLogo"] if sys.platform == "win32" else ["/bin/sh", "-i"]
+            self.proc = subprocess.Popen(
+                shell_cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=0,
+                env=env
+            )
+            self.is_subprocess = True
+            self.alive = True
+        except Exception as e:
+            print(f"[TerminalSession] subprocess fallback error: {e}")
+            self.alive = False
+
+    def start(self):
+        if self.reader_task is None or self.reader_task.done():
+            self.reader_task = asyncio.create_task(self._reader_loop())
+
+    async def _reader_loop(self):
+        loop = asyncio.get_running_loop()
+        while self.alive:
+            try:
+                chunk = ""
+                if self.is_winpty and self.proc:
+                    chunk = await loop.run_in_executor(None, self.proc.read, 2048)
+                elif self.is_ptyprocess and self.proc:
+                    chunk = await loop.run_in_executor(None, self.proc.read, 4096)
+                elif self.is_subprocess and self.proc and self.proc.stdout:
+                    raw = await loop.run_in_executor(None, self.proc.stdout.read, 1024)
+                    if raw:
+                        chunk = raw.decode("utf-8", errors="replace")
+                    else:
+                        break
                 else:
                     break
-        except Exception:
-            pass
-        finally:
-            await websocket.close()
 
-    async def write_to_pty():
+                if not chunk:
+                    await asyncio.sleep(0.02)
+                    continue
+
+                self.buffer.extend(chunk)
+                self.last_activity = time.time()
+
+                dead = set()
+                for ws in list(self.subscribers):
+                    try:
+                        await ws.send_text(chunk)
+                    except Exception:
+                        dead.add(ws)
+                for ws in dead:
+                    self.subscribers.discard(ws)
+
+            except (EOFError, BrokenPipeError):
+                self.alive = False
+                break
+            except Exception:
+                if not self.alive:
+                    break
+                await asyncio.sleep(0.05)
+
+        self.alive = False
+        msg = "\r\n\x1b[33m[Sesión de terminal finalizada]\x1b[0m\r\n"
+        for ws in list(self.subscribers):
+            try:
+                await ws.send_text(msg)
+            except Exception:
+                pass
+
+    def write(self, data: str):
+        self.last_activity = time.time()
+        if self.is_winpty and self.proc:
+            try:
+                self.proc.write(data)
+            except Exception:
+                self.alive = False
+        elif self.is_ptyprocess and self.proc:
+            try:
+                self.proc.write(data)
+            except Exception:
+                self.alive = False
+        elif self.is_subprocess and self.proc and self.proc.stdin:
+            try:
+                self.proc.stdin.write(data.encode("utf-8", errors="replace"))
+                self.proc.stdin.flush()
+            except Exception:
+                self.alive = False
+
+    def resize(self, cols: int, rows: int):
+        if cols <= 0 or rows <= 0:
+            return
+        if self.is_winpty and self.proc:
+            try:
+                self.proc.setwinsize(rows, cols)
+            except Exception:
+                pass
+        elif self.is_ptyprocess and self.proc:
+            try:
+                self.proc.setwinsize(rows, cols)
+            except Exception:
+                pass
+
+    def get_history(self) -> str:
+        return "".join(self.buffer)
+
+    def terminate(self):
+        self.alive = False
+        if self.is_winpty and self.proc:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
+        elif self.is_ptyprocess and self.proc:
+            try:
+                self.proc.terminate(force=True)
+            except Exception:
+                pass
+        elif self.is_subprocess and self.proc:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
+        if self.reader_task and not self.reader_task.done():
+            self.reader_task.cancel()
+
+    def restart(self):
+        self.terminate()
+        self.buffer.clear()
+        self._spawn()
+        self.start()
+
+TERMINAL_SESSIONS: dict[str, TerminalSession] = {}
+
+@app.websocket("/api/ws/terminal")
+async def websocket_terminal(websocket: WebSocket, session_id: str = "default"):
+    await websocket.accept()
+    session = TERMINAL_SESSIONS.get(session_id)
+    if session is None or not session.alive:
+        session = TerminalSession(session_id)
+        TERMINAL_SESSIONS[session_id] = session
+        session.start()
+
+    # Replay buffer histórico si la sesión ya tenía contenido (persistencia entre pestañas/desconexiones)
+    history = session.get_history()
+    if history:
         try:
-            while True:
-                data = await websocket.receive_text()
-                # Parse resize commands: e.g. "RESIZE:80:24"
-                if data.startswith("RESIZE:"):
-                    parts = data.split(":")
-                    if len(parts) == 3:
-                        cols = int(parts[1])
-                        rows = int(parts[2])
-                        p.setwinsize(rows, cols)
-                else:
-                    p.write(data)
+            await websocket.send_text(history)
         except Exception:
             pass
 
-    t1 = asyncio.create_task(read_from_pty())
-    t2 = asyncio.create_task(write_to_pty())
-    await asyncio.gather(t1, t2)
-    p.terminate(force=True)
+    session.subscribers.add(websocket)
+
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            if msg.startswith("RESIZE:"):
+                parts = msg.split(":")
+                if len(parts) == 3:
+                    try:
+                        session.resize(int(parts[1]), int(parts[2]))
+                    except Exception:
+                        pass
+            elif msg == "__SENTINEL_RESTART__":
+                session.restart()
+            else:
+                session.write(msg)
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        session.subscribers.discard(websocket)
+        # IMPORTANTE: NO terminamos el proceso de la sesión aquí.
+        # Esto permite que el usuario cambie de pestaña, navegue en el frontend o sufra un microcorte
+        # sin que se interrumpa su comando en ejecución (ej: htop, compilación, tail o scripts).
+
+@app.post("/api/terminal/session/terminate")
+def terminate_terminal_session(req: dict):
+    sid = req.get("session_id", "default")
+    if sid in TERMINAL_SESSIONS:
+        TERMINAL_SESSIONS[sid].terminate()
+        del TERMINAL_SESSIONS[sid]
+    return {"status": "ok", "terminated": sid}
+
+@app.websocket("/api/ws/terminal/proxy")
+async def websocket_terminal_proxy(websocket: WebSocket, target_url: str, session_id: str = "default", token: str = ""):
+    await websocket.accept()
+    import websockets
+    target_ws = target_url.replace("http://", "ws://").replace("https://", "wss://")
+    target_uri = f"{target_ws}/api/ws/terminal?session_id={session_id}&token={token}"
+    try:
+        async with websockets.connect(target_uri) as remote_ws:
+            async def forward_to_client():
+                try:
+                    async for msg in remote_ws:
+                        await websocket.send_text(msg)
+                except Exception:
+                    pass
+
+            async def forward_to_remote():
+                try:
+                    while True:
+                        msg = await websocket.receive_text()
+                        await remote_ws.send(msg)
+                except Exception:
+                    pass
+
+            t1 = asyncio.create_task(forward_to_client())
+            t2 = asyncio.create_task(forward_to_remote())
+            done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
+            for t in pending:
+                t.cancel()
+    except Exception as e:
+        try:
+            await websocket.send_text(f"\r\n\x1b[31m[Error al conectar proxy de terminal con {target_url}: {e}]\x1b[0m\r\n")
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 class WolRequest(BaseModel):
     mac: str
 
