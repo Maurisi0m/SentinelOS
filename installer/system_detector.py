@@ -115,6 +115,7 @@ def get_detailed_os():
         "arch": arch,
         "is_server": is_server,
         "ram_gb": mem_total_gb,
+        "cores": os.cpu_count() or 1,
         "has_nvidia": has_nvidia
     }
 

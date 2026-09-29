@@ -119,3 +119,21 @@ def print_step(msg: str):
 
 def print_badge(label: str, value: str, color=Colors.CYAN):
     print(f"  {Colors.BOLD}{label}:{Colors.RESET} {color}{value}{Colors.RESET}")
+
+def print_panel(title: str, lines: list, border_color=Colors.CYAN, title_color=Colors.BOLD + Colors.CYAN):
+    width = 72
+    print(f"\n{border_color}╭─ {title_color}{title}{border_color} " + "─" * max(0, width - len(title) - 5) + f"╮{Colors.RESET}")
+    for line in lines:
+        print(f"  {line}")
+    print(f"{border_color}╰" + "─" * (width - 1) + f"╯{Colors.RESET}\n")
+
+def print_menu_item(key: str, title: str, desc: str = "", tag: str = "", color=Colors.CYAN):
+    tag_str = f" {Colors.DIM}[{tag}]{Colors.RESET}" if tag else ""
+    print(f"  {Colors.BOLD}{color}[{key}]{Colors.RESET} {Colors.BOLD}{title}{Colors.RESET}{tag_str}")
+    if desc:
+        print(f"      {Colors.DIM}{desc}{Colors.RESET}")
+
+def print_prompt(label: str, default: str = "") -> str:
+    def_str = f" {Colors.DIM}[{default}]{Colors.RESET}" if default else ""
+    return input(f"\n  {Colors.BOLD}{Colors.CYAN}❯{Colors.RESET} {label}{def_str}: ").strip()
+

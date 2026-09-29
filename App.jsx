@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers, Plus, CheckCircle2, AlertCircle, AlertTriangle, Cable, Filter, Sliders, Globe, Radio, Key, Copy } from 'lucide-react';
+import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers, Plus, CheckCircle2, AlertCircle, AlertTriangle, Cable, Filter, Sliders, Globe, Radio, Key, Copy, Search } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Terminal as TerminalXTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -2326,23 +2326,50 @@ function App() {
   };
 
   const renderBtopServer = (srv, srvData, srvServices) => {
-    const srvSys = srvData?.system || {};
-    const procs = srvSys.processes || [];
+    const srvSys = srvData?.system || srvData || {};
+    const procs = Array.isArray(srvSys.processes) ? srvSys.processes : (Array.isArray(srvData?.processes) ? srvData.processes : []);
     const cpuModel = srvSys.cpu_model || 'Procesador Principal';
     const cpuCores = srvSys.cpu_cores || 4;
-    const cpuUsage = srvData?.metrics_history?.[srvData.metrics_history.length - 1]?.cpu || 0;
-    const ramTotalGb = ((srvSys.memory?.total || 0) / 1024**3).toFixed(1);
-    const ramUsedGb = ((srvSys.memory?.used || 0) / 1024**3).toFixed(1);
-    const ramPercent = srvSys.memory?.percent || 0;
-    const loadAvg = srvSys.loadavg || [0.1, 0.2, 0.15];
-    const uptimeHrs = Math.floor((srvSys.uptime || 0) / 3600);
-    const primaryNet = srvData?.network?.primary || { name: 'eth0', ip: '127.0.0.1', speed: 1000, type: 'ethernet' };
 
-    // Filtrar y ordenar procesos
+    const lastCpuMetric = srv.isLocal
+      ? (history[history.length - 1]?.cpu ?? current?.cpu ?? 0)
+      : (remoteServersData[srv.id]?.history?.slice(-1)[0]?.cpu ?? 0);
+    const cpuUsage = Math.round(Number(lastCpuMetric) || 0);
+
+    const memObj = srvSys.memory || srvData?.memory || {};
+    const memTotal = Number(memObj.total) || 1;
+    const memUsed = Number(memObj.used) || 0;
+    const ramTotalGb = (memTotal / (1024**3)).toFixed(1);
+    const ramUsedGb = (memUsed / (1024**3)).toFixed(1);
+    const ramPercent = memObj.percent !== undefined ? Math.round(Number(memObj.percent)) : Math.min(100, Math.round((memUsed / memTotal) * 100));
+    const ramAvailGb = (Math.max(0, memTotal - memUsed) / (1024**3)).toFixed(1);
+
+    const rawLoad = srvSys.loadavg || srvData?.loadavg || [0.1, 0.2, 0.15];
+    const loadAvgStr = Array.isArray(rawLoad) ? rawLoad.map(x => Number(x).toFixed(2)).join(' ') : String(rawLoad || '0.0');
+
+    const uptimeSec = Number(srvSys.uptime || srvData?.uptime || 0);
+    const uptimeHrs = Math.floor(uptimeSec / 3600);
+
+    const netObj = srvData?.network || srvSys.network || {};
+    const primaryNet = netObj.primary || { name: 'eth0', ip: '127.0.0.1', speed: 1000, type: 'ethernet' };
+
+    const gpuInfo = srvSys.gpu || srvData?.gpu || {};
+    const cpuTempStr = gpuInfo.temp ? `${gpuInfo.temp}°C` : '42°C';
+
+    const disksArr = Array.isArray(srvSys.disks) ? srvSys.disks : (Array.isArray(srvData?.disks) ? srvData.disks : []);
+    const rootDisk = disksArr[0] || null;
+    const diskTotalGb = rootDisk?.total ? (Number(rootDisk.total) / (1024**3)).toFixed(0) : '0';
+    const diskUsedGb = rootDisk?.used ? (Number(rootDisk.used) / (1024**3)).toFixed(0) : '0';
+    const diskPercent = rootDisk?.total ? Math.min(100, Math.round((Number(rootDisk.used) / Number(rootDisk.total)) * 100)) : 25;
+
+    // Filtrar y ordenar procesos de forma 100% segura contra tipos numéricos
     const filteredProcs = procs.filter(p => {
       if (!procFilterQuery) return true;
-      const q = procFilterQuery.toLowerCase();
-      return (p.name || '').toLowerCase().includes(q) || (p.pid || '').includes(q) || (p.user || '').toLowerCase().includes(q);
+      const q = String(procFilterQuery).toLowerCase();
+      const nameStr = String(p.name || '').toLowerCase();
+      const pidStr = String(p.pid || '');
+      const userStr = String(p.user || p.username || '').toLowerCase();
+      return nameStr.includes(q) || pidStr.includes(q) || userStr.includes(q);
     }).sort((a, b) => {
       if (procSortField === 'cpu') return (parseFloat(b.cpu) || 0) - (parseFloat(a.cpu) || 0);
       if (procSortField === 'mem') return (parseFloat(b.mem) || 0) - (parseFloat(a.mem) || 0);
@@ -2352,8 +2379,8 @@ function App() {
     // Filtrar servicios
     const filteredServices = (srvServices || []).filter(s => {
       if (!serviceFilterQuery) return true;
-      const q = serviceFilterQuery.toLowerCase();
-      return (s.name || '').toLowerCase().includes(q) || (s.active || '').toLowerCase().includes(q);
+      const q = String(serviceFilterQuery).toLowerCase();
+      return String(s.name || '').toLowerCase().includes(q) || String(s.active || '').toLowerCase().includes(q);
     });
 
     const isLocal = srv.isLocal;
@@ -2402,8 +2429,8 @@ function App() {
 
           <div style={{ display: 'flex', gap: '1rem', fontSize: '0.76rem', fontFamily: 'monospace', color: '#cbd5e1' }}>
             <span>Uptime: <strong style={{ color: '#38bdf8' }}>{uptimeHrs}h</strong></span>
-            <span>Load: <strong style={{ color: '#f59e0b' }}>{loadAvg.join(' ')}</strong></span>
-            <span>CPU Temp: <strong style={{ color: '#34d399' }}>{srvSys.gpu?.temp ? `${srvSys.gpu.temp}°C` : '42°C'}</strong></span>
+            <span>Load: <strong style={{ color: '#f59e0b' }}>{loadAvgStr}</strong></span>
+            <span>CPU Temp: <strong style={{ color: '#34d399' }}>{cpuTempStr}</strong></span>
           </div>
         </div>
 
@@ -2447,7 +2474,7 @@ function App() {
               }} />
             </div>
             <div style={{ fontSize: '0.72rem', color: '#64748b', fontFamily: 'monospace' }}>
-              Disponible: {((srvSys.memory?.total - srvSys.memory?.used || 0) / 1024**3).toFixed(1)} GB
+              Disponible: {ramAvailGb} GB
             </div>
           </div>
 
@@ -2456,12 +2483,12 @@ function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', fontSize: '0.8rem' }}>
               <span style={{ color: '#94a3b8', fontWeight: 700 }}>Disco Raíz (/)</span>
               <strong style={{ color: '#a855f7', fontFamily: 'monospace' }}>
-                {srvSys.disks?.[0] ? `${(srvSys.disks[0].used / 1024**3).toFixed(0)} / ${(srvSys.disks[0].total / 1024**3).toFixed(0)} GB` : 'Activo'}
+                {rootDisk ? `${diskUsedGb} / ${diskTotalGb} GB` : 'Activo'}
               </strong>
             </div>
             <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden', marginBottom: '0.4rem' }}>
               <div style={{
-                width: `${srvSys.disks?.[0]?.percent || 25}%`,
+                width: `${diskPercent}%`,
                 height: '100%',
                 background: '#a855f7',
                 transition: 'width 0.4s ease'
@@ -2779,15 +2806,15 @@ function App() {
 
       <div className="glass-panel" style={{padding: '1rem'}}>
         <div className="panel-header" style={{justifyContent: 'space-between', marginBottom: '0.5rem'}}>
-          <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem'}}><Package /><h2>APT Package Manager</h2></div>
-          <button className="btn btn-primary" disabled={aptData.count === 0} onClick={() => {if(confirm("Start upgrade in background?")) handleAction('apt/upgrade', {})}}>
-            Upgrade All ({aptData.count})
+          <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem'}}><Package /><h2>APT / Package Manager</h2></div>
+          <button className="btn btn-primary" disabled={!aptData || aptData.count === 0} onClick={() => {if(confirm("Start upgrade in background?")) handleAction('apt/upgrade', {})}}>
+            Upgrade All ({aptData?.count || 0})
           </button>
         </div>
         <div style={{maxHeight: '200px', overflowY: 'auto', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: '4px'}}>
-          {aptData.count > 0 ? (
+          {aptData?.count > 0 ? (
             <div style={{display: 'flex', flexWrap: 'wrap', gap: '0.5rem'}}>
-              {aptData.updates.map((pkg, i) => (
+              {(aptData?.updates || []).map((pkg, i) => (
                 <span key={i} style={{background: 'var(--bg-secondary)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.85rem', color: 'var(--text-secondary)'}}>{pkg}</span>
               ))}
             </div>
@@ -2798,17 +2825,17 @@ function App() {
       </div>
 
       <div className="glass-panel" style={{overflowY: 'auto', maxHeight: '400px', padding: '1rem'}}>
-        <div className="panel-header" style={{marginBottom: '0.5rem'}}><Activity /><h2>Cron Jobs</h2></div>
+        <div className="panel-header" style={{marginBottom: '0.5rem'}}><Activity /><h2>Cron Jobs / Programador de Tareas</h2></div>
         <table className="os-table">
           <thead><tr><th>User</th><th>Job</th></tr></thead>
           <tbody>
-            {data.system.cron?.map((c, i) => (
+            {(data?.system?.cron || []).map((c, i) => (
               <tr key={i}>
                 <td style={{color: 'var(--accent)', fontWeight: 'bold'}}>{c.user}</td>
                 <td style={{fontFamily: 'monospace', fontSize: '0.85rem'}}>{c.job}</td>
               </tr>
             ))}
-            {(!data.system.cron || data.system.cron.length === 0) && (
+            {(!data?.system?.cron || data.system.cron.length === 0) && (
               <tr><td colSpan="2" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No cron jobs found</td></tr>
             )}
           </tbody>

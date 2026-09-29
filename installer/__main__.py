@@ -13,7 +13,8 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 from .banner import (
     ASCII_BANNER, Colors, play_intro_animation, print_header,
-    print_success, print_warning, print_error, print_info, print_step, print_badge
+    print_success, print_warning, print_error, print_info, print_step, print_badge,
+    print_panel, print_menu_item, print_prompt
 )
 from .system_detector import get_detailed_os
 from .deps_manager import ensure_python_libraries, check_and_install_docker, check_frontend_assets
@@ -25,8 +26,66 @@ from .service_runner import start_and_verify_services
 from .node_token import get_or_create_node_auth
 import webbrowser
 import subprocess
+import json
+import urllib.request
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def detect_existing_installation(root_dir: str, os_info: dict) -> dict:
+    """Detecta de forma inteligente si SentinelOS ya está instalado o activo en esta máquina."""
+    auth_file = os.path.join(root_dir, "config", "node_auth.json")
+    start_bat = os.path.join(root_dir, "start_sentinel_bg.bat")
+    venv_dir = os.path.join(root_dir, ".venv")
+    systemd_file = "/etc/systemd/system/labsentinel.service"
+
+    is_installed = False
+    auth_data = {}
+
+    if os.path.exists(auth_file):
+        try:
+            with open(auth_file, "r", encoding="utf-8") as f:
+                auth_data = json.load(f)
+                if auth_data.get("token") or auth_data.get("node_id"):
+                    is_installed = True
+        except Exception:
+            pass
+
+    if not is_installed:
+        if os.path.exists(start_bat) or os.path.exists(systemd_file):
+            is_installed = True
+        elif os.path.exists(venv_dir) and os.path.exists(os.path.join(root_dir, "labsentinel_backend", "main.py")):
+            is_installed = True
+
+    is_running = False
+    live_info = {}
+    try:
+        req = urllib.request.Request("http://127.0.0.1:8001/api/node/token", headers={"User-Agent": "SentinelInstaller"})
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
+            if resp.status == 200:
+                is_running = True
+                live_info = json.loads(resp.read().decode())
+    except Exception:
+        try:
+            req_root = urllib.request.Request("http://127.0.0.1:8001/", headers={"User-Agent": "SentinelInstaller"})
+            with urllib.request.urlopen(req_root, timeout=1) as resp:
+                if resp.status == 200:
+                    is_running = True
+        except Exception:
+            pass
+
+    has_autostart = False
+    if os_info.get("system") == "Linux":
+        has_autostart = os.path.exists(systemd_file)
+    else:
+        has_autostart = os.path.exists(start_bat)
+
+    return {
+        "is_installed": is_installed or is_running,
+        "is_running": is_running,
+        "live_info": live_info,
+        "node_auth": auth_data,
+        "has_autostart": has_autostart
+    }
 
 def auto_bootstrap_venv():
     """Garantiza que SentinelOS se ejecute siempre dentro de su entorno virtual aislado (.venv)."""
@@ -142,6 +201,36 @@ def uninstall_system_cli(os_info: dict, lang="es"):
     print_success("SentinelOS ha sido desinstalado del sistema exitosamente." if lang == "es" else "SentinelOS has been successfully uninstalled.")
     print(f"{Colors.BOLD}{Colors.RED}╰──────────────────────────────────────────────────────────────────╯{Colors.RESET}\n")
 
+def _close_terminal_smoothly(os_info: dict, lang="es"):
+    is_desktop = os_info.get("system") == "Windows" or bool(os.environ.get("DISPLAY")) or bool(os.environ.get("WAYLAND_DISPLAY"))
+    if is_desktop:
+        print("\n" + f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74)
+        print("  ✔  SentinelOS está activo y operando 24/7 en segundo plano." if lang == "es" else "  ✔  SentinelOS is running 24/7 in the background.")
+        print("     Esta terminal se cerrará automáticamente en 4 segundos..." if lang == "es" else "     This terminal will automatically close in 4 seconds...")
+        print("═" * 74 + f"{Colors.RESET}\n")
+        try:
+            sys.stdout.flush()
+        except Exception:
+            pass
+        time.sleep(4)
+
+        if os_info.get("system") == "Windows":
+            try:
+                import ctypes
+                hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+                if hwnd:
+                    ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+            except Exception:
+                pass
+        elif os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+            try:
+                import signal
+                ppid = os.getppid()
+                if ppid > 1:
+                    os.kill(ppid, signal.SIGHUP)
+            except Exception:
+                pass
+
 def main():
     if "--uninstall" in sys.argv:
         os_info = get_detailed_os()
@@ -166,6 +255,84 @@ def main():
     gpu_badge = f"{Colors.GREEN}NVIDIA GPU Detectada (Aceleración Habilitada){Colors.RESET}" if os_info['has_nvidia'] else f"{Colors.YELLOW}CPU Nativa (Optimizada AVX2){Colors.RESET}"
     print(f"  {Colors.BOLD}🎮  Acelerador:{Colors.RESET}         {gpu_badge}")
     print(f"{Colors.BOLD}{Colors.CYAN}╰──────────────────────────────────────────────────────────────────────╯{Colors.RESET}\n")
+
+    # -------------------------------------------------------------
+    # DETECCIÓN DE INSTALACIÓN PREVIA EXISTENTE
+    # -------------------------------------------------------------
+    existing = detect_existing_installation(ROOT_DIR, os_info)
+    if existing["is_installed"] and "--fresh" not in sys.argv:
+        node_name = existing["live_info"].get("node_name") or existing["node_auth"].get("node_name") or os_info.get("hostname") or "Sentinel-Node"
+        node_id = existing["live_info"].get("node_id") or existing["node_auth"].get("node_id") or "node-live"
+        token = existing["live_info"].get("token") or existing["node_auth"].get("token") or "sntl_live_active"
+        status_badge = f"{Colors.GREEN}● EN LÍNEA (http://127.0.0.1:8001){Colors.RESET}" if existing["is_running"] else f"{Colors.YELLOW}○ DETENIDO (Listo para arrancar){Colors.RESET}"
+        autostart_str = f"{Colors.GREEN}Activo (Inicio con Sistema){Colors.RESET}" if existing["has_autostart"] else f"{Colors.DIM}No programado{Colors.RESET}"
+
+        print(f"{Colors.BOLD}{Colors.CYAN}╭── ⚡ INSTALACIÓN EXISTENTE DE SENTINEL OS DETECTADA ────────────────╮{Colors.RESET}")
+        print(f"  {Colors.BOLD}● Estado en vivo:{Colors.RESET}       {status_badge}")
+        print(f"  {Colors.BOLD}🖥️  Identidad de Nodo:{Colors.RESET}   {node_name} {Colors.DIM}(ID: {node_id}){Colors.RESET}")
+        print(f"  {Colors.BOLD}🔑  Token PIN Malla:{Colors.RESET}     {Colors.GREEN}{token}{Colors.RESET}")
+        print(f"  {Colors.BOLD}🚀  Autostart (Boot):{Colors.RESET}    {autostart_str}")
+        print(f"  {Colors.BOLD}📦  Plataforma:{Colors.RESET}          {os_info['distro_name']} ({os_info['ram_gb']} GB RAM • {os_info['cores']} Cores)")
+        print(f"{Colors.BOLD}{Colors.CYAN}╰─────────────────────────────────────────────────────────────────────╯{Colors.RESET}\n")
+
+        print(f"  {Colors.BOLD}¿Qué acción deseas realizar hoy?{Colors.RESET}\n")
+        print_menu_item("1", "Abrir Cockpit / Iniciar Servicio", "Abre el panel en el navegador y mantiene el daemon 24/7 en segundo plano", "Recomendado", Colors.GREEN)
+        print_menu_item("2", "Actualizar y Reparar", "Recompila assets frontend, valida librerías y reinicia los servicios", "Update", Colors.CYAN)
+        print_menu_item("3", "Reconfigurar Servidor", "Cambiar rol (Maestro/Satélite), Tailscale, autostart o módulos STEM", "Config", Colors.YELLOW)
+        print_menu_item("4", "Reinstalación Limpia", "Resetear credenciales y tokens, ejecutando el instalador desde cero", "Clean", Colors.MAGENTA)
+        print_menu_item("5", "Desinstalar SentinelOS", "Detener demonios, limpiar tareas de autoinicio y servicios del sistema", "Danger", Colors.RED)
+        print_menu_item("0", "Salir", "Cerrar el asistente sin hacer cambios", "", Colors.DIM)
+
+        choice = print_prompt("Selecciona una opción", "1")
+
+        if choice in ["", "1"]:
+            if not existing["is_running"]:
+                start_and_verify_services(os_info, ROOT_DIR, "es")
+            else:
+                print_success("El servidor ya está en ejecución y saludable.")
+            try:
+                print_info("Abriendo panel de control en tu navegador predeterminado...")
+                webbrowser.open("http://127.0.0.1:8001")
+            except Exception:
+                pass
+            _close_terminal_smoothly(os_info, "es")
+            return
+
+        elif choice == "2":
+            print_step("Iniciando actualización y verificación de componentes...")
+            ensure_python_libraries("es")
+            check_frontend_assets(ROOT_DIR, "es")
+            start_and_verify_services(os_info, ROOT_DIR, "es")
+            try:
+                print_info("Abriendo panel de control en tu navegador predeterminado...")
+                webbrowser.open("http://127.0.0.1:8001")
+            except Exception:
+                pass
+            _close_terminal_smoothly(os_info, "es")
+            return
+
+        elif choice == "3":
+            print_info("Iniciando asistente de reconfiguración...")
+            pass
+
+        elif choice == "4":
+            print_warning("Limpiando configuración previa para reinstalación limpia...")
+            auth_file = os.path.join(ROOT_DIR, "config", "node_auth.json")
+            if os.path.exists(auth_file):
+                try:
+                    os.remove(auth_file)
+                except Exception:
+                    pass
+            print_success("Configuración anterior reseteada. Continuando con la instalación...")
+            pass
+
+        elif choice == "5":
+            uninstall_system_cli(os_info, "es")
+            return
+
+        elif choice == "0":
+            print("\nHasta pronto.\n")
+            return
 
     # -------------------------------------------------------------
     # PASO 1: SELECCIÓN DE IDIOMA
@@ -401,38 +568,7 @@ def main():
             except Exception:
                 pass
 
-    # -------------------------------------------------------------
-    # CIERRE AUTOMÁTICO DE TERMINAL EN SISTEMAS DE ESCRITORIO
-    # (El servicio ya opera de forma autónoma 24/7 en segundo plano)
-    # -------------------------------------------------------------
-    is_desktop = os_info.get("system") == "Windows" or bool(os.environ.get("DISPLAY")) or bool(os.environ.get("WAYLAND_DISPLAY"))
-    if is_desktop:
-        print("\n" + f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74)
-        print("  ✔  SentinelOS está activo y operando 24/7 en segundo plano." if lang == "es" else "  ✔  SentinelOS is running 24/7 in the background.")
-        print("     Esta terminal se cerrará automáticamente en 4 segundos..." if lang == "es" else "     This terminal will automatically close in 4 seconds...")
-        print("═" * 74 + f"{Colors.RESET}\n")
-        try:
-            sys.stdout.flush()
-        except Exception:
-            pass
-        time.sleep(4)
-
-        if os_info.get("system") == "Windows":
-            try:
-                import ctypes
-                hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-                if hwnd:
-                    ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
-            except Exception:
-                pass
-        elif os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
-            try:
-                import signal
-                ppid = os.getppid()
-                if ppid > 1:
-                    os.kill(ppid, signal.SIGHUP)
-            except Exception:
-                pass
+    _close_terminal_smoothly(os_info, lang)
 
 if __name__ == "__main__":
     main()
