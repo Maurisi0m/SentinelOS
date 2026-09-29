@@ -130,3 +130,6 @@ if (Test-Path $venvPython) {
     $env:PYTHONPATH = $projectRoot
     & $pythonCmd -m installer
 }
+
+exit 0
+

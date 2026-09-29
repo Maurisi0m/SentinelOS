@@ -144,9 +144,21 @@ export default function NetworkTopologyView({ data, handleAction, connectedServe
       const srvRamUsedGb = rData?.system?.memory?.used ? (rData.system.memory.used / 1024**3).toFixed(1) : '3.2';
       const srvCpuUsage = rData?.metrics_history?.[rData.metrics_history.length - 1]?.cpu || 0;
 
-      // Posicionamiento geométrico limpio a la derecha del canvas
-      const xPos = 680 + (idx * 200);
-      const yPos = 270 + (idx * 130);
+      // Posicionamiento inteligente y equilibrado para 1, 2 o múltiples servidores
+      const remoteCount = connectedServers.filter(s => !s.isLocal).length;
+      let xPos, yPos;
+      if (remoteCount <= 1) {
+        xPos = 740;
+        yPos = 280;
+      } else if (remoteCount === 2) {
+        xPos = 740;
+        yPos = idx === 0 ? 190 : 420;
+      } else {
+        const col = idx % 2;
+        const row = Math.floor(idx / 2);
+        xPos = 700 + (col * 240);
+        yPos = 180 + (row * 210);
+      }
 
       nodes.push({
         id: srvId,
@@ -219,8 +231,8 @@ export default function NetworkTopologyView({ data, handleAction, connectedServe
             estado: c.status || 'Activo',
             puertos: c.ports || 'Internos'
           },
-          x: xPos + (cIdx * 90) - 40,
-          y: yPos + 160
+          x: xPos + (cIdx * 75) - 30,
+          y: yPos + 105
         });
         links.push({
           source: srvId,
@@ -503,7 +515,7 @@ export default function NetworkTopologyView({ data, handleAction, connectedServe
       <div style={{
         position: 'relative',
         width: '100%',
-        minHeight: '620px',
+        minHeight: `${Math.max(620, 260 + Math.ceil(Math.max(1, (connectedServers || []).filter(s => !s.isLocal).length) / 2) * 220)}px`,
         background: 'radial-gradient(ellipse at 50% 20%, rgba(30, 41, 59, 0.7) 0%, rgba(10, 15, 29, 0.95) 100%)',
         borderRadius: '12px',
         border: '1px solid rgba(255, 255, 255, 0.08)',

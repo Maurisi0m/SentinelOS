@@ -401,5 +401,38 @@ def main():
             except Exception:
                 pass
 
+    # -------------------------------------------------------------
+    # CIERRE AUTOMÁTICO DE TERMINAL EN SISTEMAS DE ESCRITORIO
+    # (El servicio ya opera de forma autónoma 24/7 en segundo plano)
+    # -------------------------------------------------------------
+    is_desktop = os_info.get("system") == "Windows" or bool(os.environ.get("DISPLAY")) or bool(os.environ.get("WAYLAND_DISPLAY"))
+    if is_desktop:
+        print("\n" + f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74)
+        print("  ✔  SentinelOS está activo y operando 24/7 en segundo plano." if lang == "es" else "  ✔  SentinelOS is running 24/7 in the background.")
+        print("     Esta terminal se cerrará automáticamente en 4 segundos..." if lang == "es" else "     This terminal will automatically close in 4 seconds...")
+        print("═" * 74 + f"{Colors.RESET}\n")
+        try:
+            sys.stdout.flush()
+        except Exception:
+            pass
+        time.sleep(4)
+
+        if os_info.get("system") == "Windows":
+            try:
+                import ctypes
+                hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+                if hwnd:
+                    ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+            except Exception:
+                pass
+        elif os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+            try:
+                import signal
+                ppid = os.getppid()
+                if ppid > 1:
+                    os.kill(ppid, signal.SIGHUP)
+            except Exception:
+                pass
+
 if __name__ == "__main__":
     main()

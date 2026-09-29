@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers, Plus, CheckCircle2, AlertCircle, AlertTriangle, Cable, Filter, Sliders, Globe, Radio } from 'lucide-react';
+import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers, Plus, CheckCircle2, AlertCircle, AlertTriangle, Cable, Filter, Sliders, Globe, Radio, Key, Copy } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Terminal as TerminalXTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -81,6 +81,18 @@ function App() {
   const [procFilterQuery, setProcFilterQuery] = useState('');
   const [procSortField, setProcSortField] = useState('cpu');
   const [serviceFilterQuery, setServiceFilterQuery] = useState('');
+  const [localNodeAuth, setLocalNodeAuth] = useState(null);
+  const [tokenCopied, setTokenCopied] = useState(false);
+
+  // Cargar token de nodo central al inicio
+  useEffect(() => {
+    fetch('/api/node/token')
+      .then(res => res.json())
+      .then(d => {
+        if (d && d.token) setLocalNodeAuth(d);
+      })
+      .catch(() => {});
+  }, []);
 
   // Persistir servidores conectados en localStorage
   useEffect(() => {
@@ -881,7 +893,26 @@ function App() {
             })}
           </div>
 
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {localNodeAuth?.token && (
+              <button
+                className="btn btn-secondary"
+                onClick={() => setServerModalOpen(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  fontSize: '0.82rem',
+                  padding: '0.4rem 0.85rem',
+                  borderColor: 'rgba(234, 179, 8, 0.4)',
+                  color: '#fbbf24',
+                  background: 'rgba(234, 179, 8, 0.08)'
+                }}
+                title="Ver o copiar el Token PIN de vinculación de este Servidor Maestro"
+              >
+                <Key size={14} /> Token PIN Malla
+              </button>
+            )}
             <button
               className="btn btn-secondary"
               onClick={() => setServerModalOpen(true)}
@@ -2740,7 +2771,7 @@ function App() {
         {/* Renderizado de Dashboards de Servidores (Grid Lado a Lado si hay múltiples) */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: serversToRender.length > 1 ? 'repeat(auto-fit, minmax(540px, 1fr))' : '1fr',
+          gridTemplateColumns: serversToRender.length > 1 ? 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))' : '1fr',
           gap: '1.5rem'
         }}>
           {serversToRender.map(s => renderBtopServer(s, s.data, s.services))}
@@ -3335,6 +3366,66 @@ function App() {
             <X size={20} />
           </button>
         </div>
+
+        {/* Token PIN de Vinculación de este Nodo Core */}
+        {localNodeAuth?.token && (
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.08) 0%, rgba(202, 138, 4, 0.03) 100%)',
+            border: '1px solid rgba(234, 179, 8, 0.35)',
+            borderRadius: '10px',
+            padding: '1rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.5rem'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#fbbf24', fontWeight: 700, fontSize: '0.85rem' }}>
+                <Key size={16} /> Token PIN de este Servidor Maestro
+              </div>
+              <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontFamily: 'monospace' }}>
+                ID: {localNodeAuth.node_id}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+              Usa este <strong>Token PIN</strong> para conectar servidores secundarios / satélites durante su instalación seleccionando la opción <em>"Servidor Secundario / Satélite"</em>:
+            </div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(0, 0, 0, 0.45)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '6px',
+              padding: '0.45rem 0.85rem',
+              gap: '0.75rem'
+            }}>
+              <span style={{ fontFamily: 'monospace', color: '#38bdf8', fontSize: '0.92rem', letterSpacing: '0.05em', userSelect: 'all', fontWeight: 600 }}>
+                {localNodeAuth.token}
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  navigator.clipboard.writeText(localNodeAuth.token);
+                  setTokenCopied(true);
+                  setTimeout(() => setTokenCopied(false), 2500);
+                }}
+                style={{
+                  padding: '0.3rem 0.75rem',
+                  fontSize: '0.78rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  borderColor: tokenCopied ? '#10b981' : 'rgba(255, 255, 255, 0.15)',
+                  color: tokenCopied ? '#34d399' : '#e2e8f0'
+                }}
+              >
+                {tokenCopied ? <Check size={13} color="#10b981" /> : <Copy size={13} />}
+                {tokenCopied ? '¡Copiado!' : 'Copiar Token'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Servidores Actuales */}
         <div>

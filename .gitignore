@@ -81,6 +81,9 @@ desktop.ini
 !.env.example
 secrets.json
 active_model.json
+config/
+*.vbs
+*.bat
 
 # Scratch & diagnostic scripts
 search_history.py

@@ -13,6 +13,7 @@ import time
 from datetime import datetime
 from collections import deque
 import threading
+import secrets
 
 NOTIFICATIONS_QUEUE = deque(maxlen=50)
 
@@ -801,24 +802,58 @@ async def remote_proxy(target_url: str):
 def health_check():
     return {"status": "ok", "time": time.time()}
 
-@app.get("/api/node/info")
-def get_node_info():
-    auth_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "node_auth.json")
-    auth_data = {}
+def get_node_auth():
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cfg_dir = os.path.join(root_dir, "config")
+    os.makedirs(cfg_dir, exist_ok=True)
+    auth_file = os.path.join(cfg_dir, "node_auth.json")
     if os.path.exists(auth_file):
         try:
             with open(auth_file, "r", encoding="utf-8") as f:
-                auth_data = json.load(f)
+                data = json.load(f)
+                if data.get("token") and data.get("node_id"):
+                    return data
         except Exception:
             pass
+    node_id = f"node-{secrets.token_hex(4)}"
+    token = f"sntl_live_{secrets.token_hex(8)}"
+    data = {
+        "node_id": node_id,
+        "node_name": socket.gethostname(),
+        "token": token,
+        "created_at": datetime.now().isoformat(),
+        "port": 8001
+    }
+    try:
+        with open(auth_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+    return data
+
+@app.get("/api/node/info")
+def get_node_info():
+    auth_data = get_node_auth()
     return {
         "status": "online",
         "node_id": auth_data.get("node_id", "node-sentinel"),
         "node_name": auth_data.get("node_name", socket.gethostname()),
+        "token": auth_data.get("token", ""),
         "platform": sys.platform,
         "cores": psutil.cpu_count(logical=True),
         "total_ram_gb": round(psutil.virtual_memory().total / (1024**3), 1),
         "version": "2.0.0"
+    }
+
+@app.get("/api/node/token")
+def get_node_token():
+    auth_data = get_node_auth()
+    return {
+        "status": "ok",
+        "token": auth_data.get("token", ""),
+        "node_id": auth_data.get("node_id", "node-sentinel"),
+        "node_name": auth_data.get("node_name", socket.gethostname()),
+        "port": 8001
     }
 
 class SystemUninstallRequest(BaseModel):
