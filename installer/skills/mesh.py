@@ -18,14 +18,14 @@ class MeshSkill:
         print(f"\n{Colors.BOLD}{Colors.CYAN}--- CONFIGURANDO SKILL: Sentinel Mesh ---{Colors.RESET}")
         
         prompt_role = (
-            "¿Cuál es el rol de este servidor en el laboratorio?\n"
-            "  [1] Servidor Principal (CORE) - Recibe métricas y comanda a los demás\n"
-            "  [2] Nodo Satélite (AGENT)     - Reporta métricas a un Core existente\n"
+            "¿Cuál es el rol de este servidor en tu red?\n"
+            "  [1] Servidor Central (Panel Maestro y Monitoreo General)\n"
+            "  [2] Servidor Secundario / Satélite (Conectar a Servidor Central)\n"
             "Selección [1]: "
         ) if lang == "es" else (
-            "What is the role of this server in the laboratory fleet?\n"
-            "  [1] Central Server (CORE) - Gathers metrics and controls other nodes\n"
-            "  [2] Satellite Node (AGENT) - Reports telemetry to an existing Core\n"
+            "What is the role of this server in your fleet?\n"
+            "  [1] Central Server (Master Cockpit & Telemetry Hub)\n"
+            "  [2] Secondary Server (Link to Central Server)\n"
             "Selection [1]: "
         )
         

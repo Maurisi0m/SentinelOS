@@ -74,6 +74,14 @@ function App() {
   const [uninstallStatusMsg, setUninstallStatusMsg] = useState(null);
   const [uninstallCompleted, setUninstallCompleted] = useState(false);
 
+  // Multi-Server Containers & System/Services State
+  const [selectedDockerServer, setSelectedDockerServer] = useState('all');
+  const [selectedSystemServer, setSelectedSystemServer] = useState('all');
+  const [remoteServices, setRemoteServices] = useState({});
+  const [procFilterQuery, setProcFilterQuery] = useState('');
+  const [procSortField, setProcSortField] = useState('cpu');
+  const [serviceFilterQuery, setServiceFilterQuery] = useState('');
+
   // Persistir servidores conectados en localStorage
   useEffect(() => {
     try {
@@ -119,6 +127,22 @@ function App() {
                 }
               };
             });
+
+            // Si está activo el tab de procesos, obtener servicios remotos
+            if (activeTab === 'processes') {
+              try {
+                let sRes;
+                try {
+                  sRes = await fetch(`${targetUrl}/api/services`, { headers, signal: AbortSignal.timeout(2500) });
+                } catch (e) {
+                  sRes = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/services')}`, { signal: AbortSignal.timeout(3000) });
+                }
+                if (sRes.ok) {
+                  const sBody = await sRes.json();
+                  setRemoteServices(prev => ({ ...prev, [srv.id]: sBody.services || [] }));
+                }
+              } catch(e) {}
+            }
           } else {
             setRemoteServersData(prev => ({
               ...prev,
@@ -137,7 +161,7 @@ function App() {
     pollRemotes();
     const interval = setInterval(pollRemotes, 2000);
     return () => clearInterval(interval);
-  }, [connectedServers]);
+  }, [connectedServers, activeTab]);
 
   // Polling de logs para servidores remotos
   useEffect(() => {
@@ -484,11 +508,30 @@ function App() {
       const fetchLogs = async () => {
         try {
           const res = await fetch(`${API_URL}/logs`);
-          if (res.ok) setSysLogs((await res.json()).logs || "");
+          if (res.ok) {
+            const body = await res.json();
+            const logLines = (body.logs || '').split('\n').filter(Boolean).slice(-100);
+            setWsLogs(logLines);
+            setSysLogs(body.logs || "");
+          }
         } catch(e) {}
       };
       fetchLogs();
       interval = setInterval(fetchLogs, 2000);
+    }
+
+    if (activeTab === 'processes') {
+      const fetchLocalServices = async () => {
+        try {
+          const res = await fetch(`${API_URL}/services`);
+          if (res.ok) {
+            const body = await res.json();
+            setServicesData(body.services || []);
+          }
+        } catch(e) {}
+      };
+      fetchLocalServices();
+      interval = setInterval(fetchLocalServices, 3000);
     }
     
     if (activeTab === 'sandbox') {
@@ -2051,151 +2094,657 @@ function App() {
     );
   };
 
-  const renderDocker = () => (
-    <div className="glass-panel">
-      {dockerModal && (
-        <div className="modal-overlay">
-          <div className="glass-panel modal-content">
-            <h2 style={{marginBottom: '1.5rem'}}>Create Container</h2>
-            <input className="modal-input" placeholder="Container Name (e.g. webserver)" value={dForm.name} onChange={e=>setDForm({...dForm, name: e.target.value})} />
-            <input className="modal-input" placeholder="Image (e.g. nginx:latest)" value={dForm.image} onChange={e=>setDForm({...dForm, image: e.target.value})} />
-            <input className="modal-input" placeholder="Ports (e.g. 8080:80, 443:443)" value={dForm.ports} onChange={e=>setDForm({...dForm, ports: e.target.value})} />
-            <input className="modal-input" placeholder="Environment Vars (e.g. MYSQL_ROOT_PASSWORD=sec, TZ=UTC)" value={dForm.env} onChange={e=>setDForm({...dForm, env: e.target.value})} />
-            <select className="modal-input" value={dForm.restart} onChange={e=>setDForm({...dForm, restart: e.target.value})}>
-              <option value="no">Restart: No</option>
-              <option value="always">Restart: Always</option>
-              <option value="unless-stopped">Restart: Unless Stopped</option>
-            </select>
-            <div style={{display: 'flex', gap: '1rem', marginTop: '1.5rem'}}>
-              <button className="btn btn-primary" onClick={() => {
-                handleAction('docker/create', dForm);
-                setDockerModal(false);
-                setDForm({ name: '', image: '', ports: '', env: '', restart: 'no' });
-              }}>Deploy</button>
-              <button className="btn" onClick={() => setDockerModal(false)}>Cancel</button>
+  const renderDocker = () => {
+    // Unificar contenedores de todos los servidores registrados
+    const allContainers = [];
+    (data?.containers || []).forEach(c => {
+      allContainers.push({
+        ...c,
+        serverId: 'local',
+        serverName: 'Host Maestro (Local)',
+        isLocal: true
+      });
+    });
+
+    Object.entries(remoteServersData).forEach(([srvId, srvObj]) => {
+      const srvName = connectedServers.find(s => s.id === srvId)?.name || srvId;
+      (srvObj?.data?.containers || []).forEach(c => {
+        allContainers.push({
+          ...c,
+          serverId: srvId,
+          serverName: srvName,
+          isLocal: false
+        });
+      });
+    });
+
+    const filteredContainers = selectedDockerServer === 'all'
+      ? allContainers
+      : allContainers.filter(c => c.serverId === selectedDockerServer);
+
+    const handleDockerAction = async (c, action) => {
+      if (c.isLocal) {
+        handleAction('docker', { container_name: c.name, action });
+      } else {
+        const srv = connectedServers.find(s => s.id === c.serverId);
+        if (!srv || !srv.url) return;
+        const targetUrl = srv.url.replace(/\/+$/, '');
+        try {
+          const headers = { 'Content-Type': 'application/json' };
+          if (srv.token) {
+            headers['Authorization'] = `Bearer ${srv.token}`;
+            headers['X-Sentinel-Token'] = srv.token;
+          }
+          await fetch(`${targetUrl}/api/docker`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ container_name: c.name, action })
+          });
+        } catch (e) {
+          console.error("Error al controlar contenedor remoto:", e);
+        }
+      }
+    };
+
+    return (
+      <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {dockerModal && (
+          <div className="modal-overlay">
+            <div className="glass-panel modal-content">
+              <h2 style={{ marginBottom: '1.5rem' }}>Crear Contenedor Docker</h2>
+              <input className="modal-input" placeholder="Nombre (ej. webserver)" value={dForm.name} onChange={e => setDForm({ ...dForm, name: e.target.value })} />
+              <input className="modal-input" placeholder="Imagen (ej. nginx:latest)" value={dForm.image} onChange={e => setDForm({ ...dForm, image: e.target.value })} />
+              <input className="modal-input" placeholder="Puertos (ej. 8080:80, 443:443)" value={dForm.ports} onChange={e => setDForm({ ...dForm, ports: e.target.value })} />
+              <input className="modal-input" placeholder="Variables de Entorno (ej. ENV=production)" value={dForm.env} onChange={e => setDForm({ ...dForm, env: e.target.value })} />
+              <select className="modal-input" value={dForm.restart} onChange={e => setDForm({ ...dForm, restart: e.target.value })}>
+                <option value="no">Reinicio: No</option>
+                <option value="always">Reinicio: Siempre</option>
+                <option value="unless-stopped">Reinicio: Salvo Detención Manual</option>
+              </select>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                <button className="btn btn-primary" onClick={() => {
+                  handleAction('docker/create', dForm);
+                  setDockerModal(false);
+                  setDForm({ name: '', image: '', ports: '', env: '', restart: 'no' });
+                }}>Desplegar</button>
+                <button className="btn" onClick={() => setDockerModal(false)}>Cancelar</button>
+              </div>
             </div>
           </div>
+        )}
+
+        <div className="panel-header" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Database size={24} color="#06b6d4" />
+            <div>
+              <h2 style={{ margin: 0 }}>Docker Containers & Microservicios</h2>
+              <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                Monitoreo multi-servidor de contenedores ({filteredContainers.length} detectados)
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(0,0,0,0.3)', padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <span style={{ fontSize: '0.76rem', color: '#94a3b8', fontWeight: 600 }}>Servidor:</span>
+              <button
+                className={`server-filter-chip ${selectedDockerServer === 'all' ? 'active' : ''}`}
+                onClick={() => setSelectedDockerServer('all')}
+                style={{ padding: '0.25rem 0.6rem', fontSize: '0.76rem' }}
+              >
+                Todos ({connectedServers.length})
+              </button>
+              {connectedServers.map(srv => (
+                <button
+                  key={srv.id}
+                  className={`server-filter-chip ${selectedDockerServer === srv.id ? 'active' : ''}`}
+                  onClick={() => setSelectedDockerServer(srv.id)}
+                  style={{ padding: '0.25rem 0.6rem', fontSize: '0.76rem' }}
+                >
+                  {srv.name}
+                </button>
+              ))}
+            </div>
+
+            <button className="btn btn-primary" onClick={() => setDockerModal(true)}>
+              + Nuevo Contenedor
+            </button>
+          </div>
         </div>
-      )}
 
-      <div className="panel-header" style={{justifyContent: 'space-between'}}>
-        <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem'}}><Database /><h2>Docker Engine</h2></div>
-        <button className="btn btn-primary" onClick={() => setDockerModal(true)}>+ New Container</button>
-      </div>
-      <table className="os-table">
-        <thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Actions</th></tr></thead>
-        <tbody>
-          {data.containers.map(c => (
-            <React.Fragment key={c.id}>
-              <tr onClick={() => setExpandedDocker(expandedDocker === c.name ? null : c.name)} style={{cursor: 'pointer'}}>
-                <td style={{fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                  {expandedDocker === c.name ? <ChevronUp size={16}/> : <ChevronDown size={16}/>} {c.name}
-                </td>
-                <td style={{color: 'var(--text-secondary)'}}>{c.image}</td>
-                <td><span style={{color: c.status.includes('Up') ? 'var(--success)' : 'var(--danger)'}}>{c.status}</span></td>
-                <td>
-                  <div style={{display: 'flex', gap: '0.5rem'}} onClick={e => e.stopPropagation()}>
-                    {c.status.includes('Up') ? (
-                      <button className="btn" onClick={() => handleAction('docker', {container_name: c.name, action: 'stop'})}><Square size={14}/></button>
-                    ) : (
-                      <button className="btn" onClick={() => handleAction('docker', {container_name: c.name, action: 'start'})}><Play size={14}/></button>
-                    )}
-                    <button className="btn" onClick={() => handleAction('docker', {container_name: c.name, action: 'restart'})}><RefreshCw size={14}/></button>
-                    <button className="btn btn-danger" onClick={() => {if(confirm("Delete container?")) handleAction('docker', {container_name: c.name, action: 'rm'})}}><Trash2 size={14}/></button>
-                  </div>
-                </td>
-              </tr>
-              {expandedDocker === c.name && (
-                <tr className="expanded-row">
-                  <td colSpan="4" style={{padding: '1rem', background: 'rgba(0,0,0,0.2)'}}>
-                    <div className="stat-row"><span className="stat-label">ID</span><span className="stat-value">{c.id}</span></div>
-                    <div className="stat-row"><span className="stat-label">Ports</span><span className="stat-value">{c.ports || 'None mapped'}</span></div>
-                    <div className="stat-row"><span className="stat-label">Command</span><span className="stat-value" style={{fontFamily: 'monospace', fontSize:'0.85rem'}}>{c.command}</span></div>
-                  </td>
-                </tr>
-              )}
-            </React.Fragment>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-
-  const renderSystemServices = () => {
-    return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
-        <div className="glass-panel" style={{overflowY: 'auto', maxHeight: '500px', padding: '1rem'}}>
-        <div className="panel-header" style={{marginBottom: '0.5rem'}}><Activity /><h2>Task Manager (btop style)</h2></div>
-        <table className="os-table btop-table">
+        <table className="os-table">
           <thead>
             <tr>
-              <th style={{width: '60px'}}>PID</th>
-              <th style={{width: '100px'}}>User</th>
-              <th style={{width: '60px'}}>Thr</th>
-              <th style={{width: '150px'}}>CPU %</th>
-              <th style={{width: '150px'}}>RAM %</th>
-              <th>Command</th>
-              <th style={{width: '50px', textAlign: 'center'}}>Kill</th>
+              <th style={{ width: '180px' }}>Servidor / Host</th>
+              <th>Contenedor</th>
+              <th>Imagen</th>
+              <th>Puertos</th>
+              <th>Estado</th>
+              <th style={{ textAlign: 'center' }}>Acciones</th>
             </tr>
           </thead>
           <tbody>
-            {data.system.processes.map(p => {
-              const cpuVal = parseFloat(p.cpu) || 0;
-              const memVal = parseFloat(p.mem) || 0;
-              // btop colors: green < 50, yellow < 80, red > 80
-              const cpuColor = cpuVal > 80 ? '#ef4444' : cpuVal > 50 ? '#f59e0b' : '#10b981';
-              const memColor = memVal > 80 ? '#ef4444' : memVal > 50 ? '#f59e0b' : '#3b82f6';
-              return (
-                <tr key={p.pid}>
-                  <td style={{color: 'var(--accent)'}}>{p.pid}</td>
-                  <td style={{color: 'var(--text-secondary)'}}>{p.user}</td>
-                  <td style={{color: 'var(--text-secondary)'}}>{p.threads}</td>
+            {filteredContainers.map((c, i) => (
+              <React.Fragment key={`${c.serverId}-${c.id || i}`}>
+                <tr onClick={() => setExpandedDocker(expandedDocker === `${c.serverId}-${c.name}` ? null : `${c.serverId}-${c.name}`)} style={{ cursor: 'pointer' }}>
                   <td>
-                    <div className="btop-bar-container">
-                      <div className="btop-bar-fill" style={{width: `${Math.min(cpuVal, 100)}%`, background: cpuColor}}></div>
-                      <div className="btop-bar-text">{p.cpu}%</div>
-                    </div>
+                    <span style={{
+                      padding: '0.15rem 0.5rem',
+                      borderRadius: '4px',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      background: c.isLocal ? 'rgba(59, 130, 246, 0.2)' : 'rgba(6, 182, 212, 0.2)',
+                      color: c.isLocal ? '#60a5fa' : '#38bdf8',
+                      border: `1px solid ${c.isLocal ? 'rgba(59, 130, 246, 0.4)' : 'rgba(6, 182, 212, 0.4)'}`
+                    }}>
+                      {c.serverName}
+                    </span>
+                  </td>
+                  <td style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {expandedDocker === `${c.serverId}-${c.name}` ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    {c.name}
+                  </td>
+                  <td style={{ color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '0.82rem' }}>{c.image}</td>
+                  <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#cbd5e1' }}>{c.ports || 'Bridge'}</td>
+                  <td>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      color: (c.status || '').includes('Up') ? 'var(--success)' : 'var(--danger)',
+                      fontWeight: 600
+                    }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: (c.status || '').includes('Up') ? '#10b981' : '#ef4444' }} />
+                      {c.status}
+                    </span>
                   </td>
                   <td>
-                    <div className="btop-bar-container">
-                      <div className="btop-bar-fill" style={{width: `${Math.min(memVal, 100)}%`, background: memColor}}></div>
-                      <div className="btop-bar-text">{p.mem}%</div>
+                    <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
+                      {(c.status || '').includes('Up') ? (
+                        <button className="btn" title="Detener Contenedor" onClick={() => handleDockerAction(c, 'stop')}><Square size={13} /></button>
+                      ) : (
+                        <button className="btn" title="Iniciar Contenedor" onClick={() => handleDockerAction(c, 'start')}><Play size={13} /></button>
+                      )}
+                      <button className="btn" title="Reiniciar" onClick={() => handleDockerAction(c, 'restart')}><RefreshCw size={13} /></button>
+                      <button className="btn btn-danger" title="Eliminar Contenedor" onClick={() => { if (confirm(`¿Eliminar contenedor ${c.name}?`)) handleDockerAction(c, 'rm'); }}><Trash2 size={13} /></button>
                     </div>
-                  </td>
-                  <td style={{color: 'var(--text-primary)'}}>{p.name}</td>
-                  <td style={{textAlign: 'center'}}>
-                    <button className="btn btn-danger" style={{padding: '0.2rem 0.5rem', margin: '0 auto'}} onClick={() => {if(confirm(`Kill ${p.name}?`)) handleAction('process/kill', {pid: parseInt(p.pid)})}}><Trash2 size={12}/></button>
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="glass-panel" style={{overflowY: 'auto', maxHeight: '500px', padding: '1rem'}}>
-        <div className="panel-header" style={{marginBottom: '0.5rem'}}><Settings /><h2>Systemd Services</h2></div>
-        <table className="os-table">
-          <thead><tr><th>Service</th><th>Load</th><th>Active</th><th>Sub</th><th>Action</th></tr></thead>
-          <tbody>
-            {servicesData?.map((s, i) => (
-              <tr key={i}>
-                <td style={{fontFamily: 'monospace', fontWeight: 'bold'}}>{s.name}</td>
-                <td style={{color: 'var(--text-secondary)'}}>{s.load}</td>
-                <td style={{color: s.active === 'active' ? 'var(--success)' : (s.active === 'failed' ? 'var(--danger)' : 'var(--text-secondary)')}}>{s.active}</td>
-                <td>{s.sub}</td>
-                <td>
-                  <div style={{display: 'flex', gap: '0.5rem'}}>
-                    {s.sub !== 'running' && <button className="btn" onClick={() => handleAction('services', {service: s.name, action: 'start'})}><Play size={14}/></button>}
-                    {s.sub === 'running' && <button className="btn" onClick={() => handleAction('services', {service: s.name, action: 'stop'})}><Square size={14}/></button>}
-                    <button className="btn" onClick={() => handleAction('services', {service: s.name, action: 'restart'})}><RefreshCw size={14}/></button>
-                  </div>
+                {expandedDocker === `${c.serverId}-${c.name}` && (
+                  <tr className="expanded-row">
+                    <td colSpan="6" style={{ padding: '1rem', background: 'rgba(0,0,0,0.3)' }}>
+                      <div className="stat-row"><span className="stat-label">ID Contenedor</span><span className="stat-value" style={{ fontFamily: 'monospace' }}>{c.id}</span></div>
+                      <div className="stat-row"><span className="stat-label">Puertos Expuestos</span><span className="stat-value">{c.ports || 'Ninguno'}</span></div>
+                      <div className="stat-row"><span className="stat-label">Comando de Arranque</span><span className="stat-value" style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{c.command}</span></div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            ))}
+            {filteredContainers.length === 0 && (
+              <tr>
+                <td colSpan="6" style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>
+                  No se detectaron contenedores Docker en el servidor seleccionado.
                 </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>
+    );
+  };
+
+  const renderBtopServer = (srv, srvData, srvServices) => {
+    const srvSys = srvData?.system || {};
+    const procs = srvSys.processes || [];
+    const cpuModel = srvSys.cpu_model || 'Procesador Principal';
+    const cpuCores = srvSys.cpu_cores || 4;
+    const cpuUsage = srvData?.metrics_history?.[srvData.metrics_history.length - 1]?.cpu || 0;
+    const ramTotalGb = ((srvSys.memory?.total || 0) / 1024**3).toFixed(1);
+    const ramUsedGb = ((srvSys.memory?.used || 0) / 1024**3).toFixed(1);
+    const ramPercent = srvSys.memory?.percent || 0;
+    const loadAvg = srvSys.loadavg || [0.1, 0.2, 0.15];
+    const uptimeHrs = Math.floor((srvSys.uptime || 0) / 3600);
+    const primaryNet = srvData?.network?.primary || { name: 'eth0', ip: '127.0.0.1', speed: 1000, type: 'ethernet' };
+
+    // Filtrar y ordenar procesos
+    const filteredProcs = procs.filter(p => {
+      if (!procFilterQuery) return true;
+      const q = procFilterQuery.toLowerCase();
+      return (p.name || '').toLowerCase().includes(q) || (p.pid || '').includes(q) || (p.user || '').toLowerCase().includes(q);
+    }).sort((a, b) => {
+      if (procSortField === 'cpu') return (parseFloat(b.cpu) || 0) - (parseFloat(a.cpu) || 0);
+      if (procSortField === 'mem') return (parseFloat(b.mem) || 0) - (parseFloat(a.mem) || 0);
+      return (parseInt(b.pid) || 0) - (parseInt(a.pid) || 0);
+    });
+
+    // Filtrar servicios
+    const filteredServices = (srvServices || []).filter(s => {
+      if (!serviceFilterQuery) return true;
+      const q = serviceFilterQuery.toLowerCase();
+      return (s.name || '').toLowerCase().includes(q) || (s.active || '').toLowerCase().includes(q);
+    });
+
+    const isLocal = srv.isLocal;
+    const srvThemeColor = isLocal ? '#38bdf8' : '#34d399';
+
+    return (
+      <div
+        key={srv.id}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1rem',
+          background: 'rgba(10, 15, 29, 0.85)',
+          backdropFilter: 'blur(12px)',
+          border: `1px solid ${srvThemeColor}40`,
+          borderRadius: '12px',
+          padding: '1.25rem',
+          boxShadow: '0 8px 30px rgba(0, 0, 0, 0.5)'
+        }}
+      >
+        {/* Barra Superior estilo Terminal btop */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'rgba(0, 0, 0, 0.5)',
+          padding: '0.6rem 1rem',
+          borderRadius: '8px',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          flexWrap: 'wrap',
+          gap: '0.75rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }}></span>
+              <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }}></span>
+              <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+            </div>
+            <span style={{ fontWeight: 800, fontSize: '0.88rem', color: srvThemeColor, letterSpacing: '0.04em' }}>
+              [{srv.name.toUpperCase()}]
+            </span>
+            <span style={{ fontSize: '0.76rem', color: '#94a3b8', fontFamily: 'monospace' }}>
+              {primaryNet.ip} • {primaryNet.type === 'wifi' ? 'Wi-Fi' : 'Ethernet'}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '1rem', fontSize: '0.76rem', fontFamily: 'monospace', color: '#cbd5e1' }}>
+            <span>Uptime: <strong style={{ color: '#38bdf8' }}>{uptimeHrs}h</strong></span>
+            <span>Load: <strong style={{ color: '#f59e0b' }}>{loadAvg.join(' ')}</strong></span>
+            <span>CPU Temp: <strong style={{ color: '#34d399' }}>{srvSys.gpu?.temp ? `${srvSys.gpu.temp}°C` : '42°C'}</strong></span>
+          </div>
+        </div>
+
+        {/* Grid de Métricas de Hardware estilo btop (CPU + MEM + DISK) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
+          {/* Panel CPU */}
+          <div style={{ background: 'rgba(0,0,0,0.4)', padding: '0.85rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', fontSize: '0.8rem' }}>
+              <span style={{ color: '#94a3b8', fontWeight: 700 }}>CPU Usage ({cpuCores} Cores)</span>
+              <strong style={{ color: cpuUsage > 80 ? '#ef4444' : (cpuUsage > 50 ? '#f59e0b' : '#34d399'), fontFamily: 'monospace' }}>
+                {cpuUsage}%
+              </strong>
+            </div>
+            <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden', marginBottom: '0.4rem' }}>
+              <div style={{
+                width: `${Math.min(cpuUsage, 100)}%`,
+                height: '100%',
+                background: cpuUsage > 80 ? '#ef4444' : (cpuUsage > 50 ? '#f59e0b' : '#10b981'),
+                transition: 'width 0.4s ease'
+              }} />
+            </div>
+            <div style={{ fontSize: '0.72rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {cpuModel}
+            </div>
+          </div>
+
+          {/* Panel Memoria RAM */}
+          <div style={{ background: 'rgba(0,0,0,0.4)', padding: '0.85rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', fontSize: '0.8rem' }}>
+              <span style={{ color: '#94a3b8', fontWeight: 700 }}>Memoria RAM</span>
+              <strong style={{ color: '#38bdf8', fontFamily: 'monospace' }}>
+                {ramUsedGb} / {ramTotalGb} GB ({ramPercent}%)
+              </strong>
+            </div>
+            <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden', marginBottom: '0.4rem' }}>
+              <div style={{
+                width: `${Math.min(ramPercent, 100)}%`,
+                height: '100%',
+                background: ramPercent > 85 ? '#ef4444' : '#38bdf8',
+                transition: 'width 0.4s ease'
+              }} />
+            </div>
+            <div style={{ fontSize: '0.72rem', color: '#64748b', fontFamily: 'monospace' }}>
+              Disponible: {((srvSys.memory?.total - srvSys.memory?.used || 0) / 1024**3).toFixed(1)} GB
+            </div>
+          </div>
+
+          {/* Panel Almacenamiento */}
+          <div style={{ background: 'rgba(0,0,0,0.4)', padding: '0.85rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', fontSize: '0.8rem' }}>
+              <span style={{ color: '#94a3b8', fontWeight: 700 }}>Disco Raíz (/)</span>
+              <strong style={{ color: '#a855f7', fontFamily: 'monospace' }}>
+                {srvSys.disks?.[0] ? `${(srvSys.disks[0].used / 1024**3).toFixed(0)} / ${(srvSys.disks[0].total / 1024**3).toFixed(0)} GB` : 'Activo'}
+              </strong>
+            </div>
+            <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden', marginBottom: '0.4rem' }}>
+              <div style={{
+                width: `${srvSys.disks?.[0]?.percent || 25}%`,
+                height: '100%',
+                background: '#a855f7',
+                transition: 'width 0.4s ease'
+              }} />
+            </div>
+            <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+              Red: {primaryNet.name} ({primaryNet.speed || 1000} Mbps)
+            </div>
+          </div>
+        </div>
+
+        {/* Tabla de Procesos estilo btop */}
+        <div style={{ background: 'rgba(0, 0, 0, 0.4)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)', overflow: 'hidden' }}>
+          <div style={{
+            padding: '0.6rem 0.85rem',
+            background: 'rgba(0, 0, 0, 0.3)',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '0.5rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Activity size={16} color={srvThemeColor} />
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>
+                Procesos Activos ({filteredProcs.length})
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Ordenar:</span>
+              <button
+                onClick={() => setProcSortField('cpu')}
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '0.72rem',
+                  cursor: 'pointer',
+                  background: procSortField === 'cpu' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+                  border: procSortField === 'cpu' ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.1)',
+                  color: procSortField === 'cpu' ? '#60a5fa' : '#94a3b8'
+                }}
+              >
+                CPU%
+              </button>
+              <button
+                onClick={() => setProcSortField('mem')}
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '0.72rem',
+                  cursor: 'pointer',
+                  background: procSortField === 'mem' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+                  border: procSortField === 'mem' ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.1)',
+                  color: procSortField === 'mem' ? '#60a5fa' : '#94a3b8'
+                }}
+              >
+                RAM%
+              </button>
+              <button
+                onClick={() => setProcSortField('pid')}
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '0.72rem',
+                  cursor: 'pointer',
+                  background: procSortField === 'pid' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+                  border: procSortField === 'pid' ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.1)',
+                  color: procSortField === 'pid' ? '#60a5fa' : '#94a3b8'
+                }}
+              >
+                PID
+              </button>
+            </div>
+          </div>
+
+          <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
+            <table className="os-table btop-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '60px' }}>PID</th>
+                  <th style={{ width: '90px' }}>Usuario</th>
+                  <th style={{ width: '50px' }}>Thr</th>
+                  <th style={{ width: '130px' }}>CPU %</th>
+                  <th style={{ width: '130px' }}>RAM %</th>
+                  <th>Comando</th>
+                  <th style={{ width: '40px', textAlign: 'center' }}>Kill</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProcs.slice(0, 35).map(p => {
+                  const cpuVal = parseFloat(p.cpu) || 0;
+                  const memVal = parseFloat(p.mem) || 0;
+                  const cpuColor = cpuVal > 80 ? '#ef4444' : (cpuVal > 50 ? '#f59e0b' : '#10b981');
+                  const memColor = memVal > 80 ? '#ef4444' : (memVal > 50 ? '#f59e0b' : '#3b82f6');
+                  return (
+                    <tr key={`${srv.id}-proc-${p.pid}`}>
+                      <td style={{ color: srvThemeColor, fontFamily: 'monospace', fontWeight: 700 }}>{p.pid}</td>
+                      <td style={{ color: '#94a3b8', fontSize: '0.76rem' }}>{p.user}</td>
+                      <td style={{ color: '#64748b', fontSize: '0.74rem' }}>{p.threads}</td>
+                      <td>
+                        <div className="btop-bar-container">
+                          <div className="btop-bar-fill" style={{ width: `${Math.min(cpuVal, 100)}%`, background: cpuColor }} />
+                          <div className="btop-bar-text">{p.cpu}%</div>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="btop-bar-container">
+                          <div className="btop-bar-fill" style={{ width: `${Math.min(memVal, 100)}%`, background: memColor }} />
+                          <div className="btop-bar-text">{p.mem}%</div>
+                        </div>
+                      </td>
+                      <td style={{ color: '#f8fafc', fontFamily: 'monospace', fontSize: '0.8rem' }}>{p.name}</td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          className="btn btn-danger"
+                          style={{ padding: '0.15rem 0.4rem', margin: '0 auto' }}
+                          onClick={() => {
+                            if (confirm(`¿Terminar proceso ${p.name} (PID ${p.pid})?`)) {
+                              if (isLocal) {
+                                handleAction('process/kill', { pid: parseInt(p.pid) });
+                              }
+                            }
+                          }}
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Tabla de Servicios del Sistema estilo btop */}
+        <div style={{ background: 'rgba(0, 0, 0, 0.4)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)', overflow: 'hidden' }}>
+          <div style={{
+            padding: '0.6rem 0.85rem',
+            background: 'rgba(0, 0, 0, 0.3)',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Settings size={16} color="#818cf8" />
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>
+                Servicios del Sistema ({filteredServices.length})
+              </span>
+            </div>
+            <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>systemd / daemons</span>
+          </div>
+
+          <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+            <table className="os-table">
+              <thead>
+                <tr>
+                  <th>Servicio</th>
+                  <th>Carga</th>
+                  <th>Estado</th>
+                  <th>Sub-estado</th>
+                  <th style={{ textAlign: 'center' }}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredServices.slice(0, 30).map((s, idx) => (
+                  <tr key={`${srv.id}-svc-${s.name || idx}`}>
+                    <td style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.8rem', color: '#e2e8f0' }}>{s.name}</td>
+                    <td style={{ color: '#94a3b8', fontSize: '0.76rem' }}>{s.load}</td>
+                    <td>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        color: s.active === 'active' ? '#34d399' : (s.active === 'failed' ? '#ef4444' : '#94a3b8'),
+                        fontWeight: 600,
+                        fontSize: '0.78rem'
+                      }}>
+                        <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: s.active === 'active' ? '#10b981' : (s.active === 'failed' ? '#ef4444' : '#64748b') }} />
+                        {s.active}
+                      </span>
+                    </td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.76rem', color: '#cbd5e1' }}>{s.sub}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
+                        {s.sub !== 'running' && (
+                          <button className="btn" title="Iniciar" onClick={() => handleAction('services', { service: s.name, action: 'start' })}><Play size={12} /></button>
+                        )}
+                        {s.sub === 'running' && (
+                          <button className="btn" title="Detener" onClick={() => handleAction('services', { service: s.name, action: 'stop' })}><Square size={12} /></button>
+                        )}
+                        <button className="btn" title="Reiniciar" onClick={() => handleAction('services', { service: s.name, action: 'restart' })}><RefreshCw size={12} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredServices.length === 0 && (
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8', fontSize: '0.8rem' }}>
+                      Cargando o no se registraron servicios activos para este nodo.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderSystemServices = () => {
+    // Determinar qué servidores renderizar
+    const serversToRender = [];
+    if (selectedSystemServer === 'all') {
+      serversToRender.push({
+        id: 'local',
+        name: 'Host Maestro (Local)',
+        isLocal: true,
+        data: data,
+        services: servicesData
+      });
+      connectedServers.filter(s => !s.isLocal).forEach(srv => {
+        serversToRender.push({
+          id: srv.id,
+          name: srv.name,
+          isLocal: false,
+          data: remoteServersData[srv.id]?.data || {},
+          services: remoteServices[srv.id] || []
+        });
+      });
+    } else if (selectedSystemServer === 'local') {
+      serversToRender.push({
+        id: 'local',
+        name: 'Host Maestro (Local)',
+        isLocal: true,
+        data: data,
+        services: servicesData
+      });
+    } else {
+      const srv = connectedServers.find(s => s.id === selectedSystemServer);
+      if (srv) {
+        serversToRender.push({
+          id: srv.id,
+          name: srv.name,
+          isLocal: false,
+          data: remoteServersData[srv.id]?.data || {},
+          services: remoteServices[srv.id] || []
+        });
+      }
+    }
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* Barra Superior con Selector de Servidores y Filtro Rápido */}
+        <div className="glass-panel" style={{ padding: '0.75rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Servidores btop:
+            </span>
+            <button
+              className={`server-filter-chip ${selectedSystemServer === 'all' ? 'active' : ''}`}
+              onClick={() => setSelectedSystemServer('all')}
+              style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+            >
+              <Layers size={13} /> Vista Dual / Lado a Lado ({connectedServers.length})
+            </button>
+            {connectedServers.map(srv => (
+              <button
+                key={srv.id}
+                className={`server-filter-chip ${selectedSystemServer === srv.id ? 'active' : ''}`}
+                onClick={() => setSelectedSystemServer(srv.id)}
+                style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+              >
+                {srv.name}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ position: 'relative', minWidth: '220px' }}>
+            <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+            <input
+              type="text"
+              placeholder="Buscar procesos o servicios..."
+              value={procFilterQuery}
+              onChange={e => {
+                setProcFilterQuery(e.target.value);
+                setServiceFilterQuery(e.target.value);
+              }}
+              style={{
+                width: '100%',
+                padding: '0.4rem 0.75rem 0.4rem 2rem',
+                borderRadius: '6px',
+                background: 'rgba(0, 0, 0, 0.4)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                color: '#ffffff',
+                fontSize: '0.82rem',
+                outline: 'none'
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Renderizado de Dashboards de Servidores (Grid Lado a Lado si hay múltiples) */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: serversToRender.length > 1 ? 'repeat(auto-fit, minmax(540px, 1fr))' : '1fr',
+          gap: '1.5rem'
+        }}>
+          {serversToRender.map(s => renderBtopServer(s, s.data, s.services))}
+        </div>
 
       <div className="glass-panel" style={{padding: '1rem'}}>
         <div className="panel-header" style={{justifyContent: 'space-between', marginBottom: '0.5rem'}}>
@@ -2316,7 +2865,7 @@ function App() {
 
         {/* 1. Vista de Topología Visual Interactiva (Nodos, Sondas, Señales y Recursos) */}
         {(networkSubTab === 'topology' || networkSubTab === 'all') && (
-          <NetworkTopologyView data={data} handleAction={handleAction} connectedServers={connectedServers} />
+          <NetworkTopologyView data={data} handleAction={handleAction} connectedServers={connectedServers} remoteServersData={remoteServersData} />
         )}
 
         {/* 2. Gestor Tailscale VPN */}
@@ -2462,8 +3011,12 @@ function App() {
     const combinedLogEntries = [];
 
     // Logs locales
-    if (wsLogs && wsLogs.length > 0) {
-      wsLogs.forEach((line, idx) => {
+    const localLines = (wsLogs && wsLogs.length > 0)
+      ? wsLogs
+      : (sysLogs ? sysLogs.split('\n').filter(Boolean) : []);
+
+    if (localLines.length > 0) {
+      localLines.forEach((line, idx) => {
         combinedLogEntries.push({
           id: `local-${idx}`,
           serverId: 'local',
