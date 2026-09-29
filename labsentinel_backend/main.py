@@ -477,6 +477,136 @@ async def startup_event():
 _CACHED_SYSTEM_DATA = None
 _LAST_FULL_SCAN_TIME = 0.0
 
+_LAST_INTERNET_CHECK_TIME = 0.0
+_CACHED_INTERNET_STATUS = {
+    "has_internet": True,
+    "latency_ms": 25.0,
+    "mode": "online",
+    "status_label": "Conectado a Internet",
+    "message": "Acceso a WAN/Internet activo. Enlaces remotos y actualizaciones disponibles."
+}
+
+def check_cached_internet_status(force: bool = False) -> dict:
+    global _LAST_INTERNET_CHECK_TIME, _CACHED_INTERNET_STATUS
+    now = time.time()
+    if not force and (now - _LAST_INTERNET_CHECK_TIME < 8.0):
+        return _CACHED_INTERNET_STATUS
+
+    _LAST_INTERNET_CHECK_TIME = now
+    t0 = time.time()
+    has_internet = False
+    latency_ms = None
+    
+    # Try Cloudflare (1.1.1.1) then Google (8.8.8.8)
+    for host in [("1.1.1.1", 53), ("8.8.8.8", 53)]:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.7)
+            sock.connect(host)
+            sock.close()
+            has_internet = True
+            latency_ms = round((time.time() - t0) * 1000, 1)
+            break
+        except Exception:
+            continue
+
+    if has_internet:
+        status = {
+            "has_internet": True,
+            "latency_ms": latency_ms,
+            "mode": "online",
+            "status_label": "Conectado a Internet",
+            "message": "Acceso a WAN/Internet activo. Enlaces remotos y actualizaciones disponibles."
+        }
+    else:
+        # Check if local LAN interfaces are active
+        has_lan = False
+        try:
+            for iface, stats in psutil.net_if_stats().items():
+                if "loopback" in iface.lower() or iface.lower() == "lo":
+                    continue
+                if stats.isup:
+                    addrs = psutil.net_if_addrs().get(iface, [])
+                    if any(a.family == socket.AF_INET and not a.address.startswith("127.") for a in addrs):
+                        has_lan = True
+                        break
+        except Exception:
+            has_lan = True
+
+        if has_lan:
+            status = {
+                "has_internet": False,
+                "latency_ms": None,
+                "mode": "local_only",
+                "status_label": "Solo Red Local (Sin Internet / LAN Air-Gapped)",
+                "message": "SentinelOS opera 100% en modo local (LAN). La telemetría, Docker, IA local, Klipper y terminales funcionan sin requerir internet."
+            }
+        else:
+            status = {
+                "has_internet": False,
+                "latency_ms": None,
+                "mode": "offline",
+                "status_label": "Sin Conexión de Red",
+                "message": "No se detectaron interfaces de red activas con dirección IPv4 asignada."
+            }
+
+    _CACHED_INTERNET_STATUS = status
+    return status
+
+def get_default_gateway() -> str:
+    try:
+        if sys.platform == "win32":
+            out = subprocess.check_output("route print 0.0.0.0", shell=True, text=True, timeout=1.5)
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[0] == "0.0.0.0":
+                    return parts[2]
+        else:
+            if os.path.exists("/proc/net/route"):
+                with open("/proc/net/route") as f:
+                    for line in f.readlines()[1:]:
+                        fields = line.strip().split()
+                        if len(fields) >= 3 and fields[1] == "00000000":
+                            return socket.inet_ntoa(struct.pack("<L", int(fields[2], 16)))
+    except Exception:
+        pass
+    return "No detectado"
+
+def get_primary_local_ip() -> str:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+_LAST_NET_IO_TIME = time.time()
+_LAST_NET_IO = None
+_CACHED_NET_RATES = {"upload_kbps": 0.0, "download_kbps": 0.0, "total_sent_mb": 0.0, "total_recv_mb": 0.0}
+
+def get_network_traffic_rates() -> dict:
+    global _LAST_NET_IO_TIME, _LAST_NET_IO, _CACHED_NET_RATES
+    try:
+        now = time.time()
+        current_io = psutil.net_io_counters()
+        if _LAST_NET_IO is not None and (now - _LAST_NET_IO_TIME) > 0.5:
+            dt = now - _LAST_NET_IO_TIME
+            up_bytes_sec = (current_io.bytes_sent - _LAST_NET_IO.bytes_sent) / dt
+            down_bytes_sec = (current_io.bytes_recv - _LAST_NET_IO.bytes_recv) / dt
+            _CACHED_NET_RATES = {
+                "upload_kbps": round(up_bytes_sec / 1024, 1),
+                "download_kbps": round(down_bytes_sec / 1024, 1),
+                "total_sent_mb": round(current_io.bytes_sent / (1024 * 1024), 1),
+                "total_recv_mb": round(current_io.bytes_recv / (1024 * 1024), 1)
+            }
+        _LAST_NET_IO_TIME = now
+        _LAST_NET_IO = current_io
+    except Exception:
+        pass
+    return _CACHED_NET_RATES
+
 def collect_data() -> dict:
     global _CACHED_SYSTEM_DATA, _LAST_FULL_SCAN_TIME
     now = time.time()
@@ -760,7 +890,11 @@ def collect_data() -> dict:
                 "speed": 1000,
                 "ip": "127.0.0.1",
                 "mac": ""
-            }
+            },
+            "internet": check_cached_internet_status(),
+            "gateway": get_default_gateway(),
+            "local_ip": get_primary_local_ip(),
+            "traffic": get_network_traffic_rates()
         },
         "tailscale": tailscale,
         "system": {
@@ -1888,7 +2022,53 @@ class SentinelModelSwitchPayload(BaseModel):
 
 @app.get("/api/network/internet_status")
 def get_internet_status():
-    return sentinel_service.check_internet_connectivity()
+    return check_cached_internet_status(force=True)
+
+@app.get("/api/network/details")
+def get_network_details():
+    net_status = check_cached_internet_status(force=True)
+    gateway = get_default_gateway()
+    local_ip = get_primary_local_ip()
+    traffic = get_network_traffic_rates()
+    interfaces = []
+    try:
+        if_stats = psutil.net_if_stats()
+        if_addrs = psutil.net_if_addrs()
+        for iface_name, stats in if_stats.items():
+            if "loopback" in iface_name.lower() or iface_name.lower() == "lo":
+                continue
+            name_lower = iface_name.lower()
+            if name_lower.startswith("wl") or any(w in name_lower for w in ["wi-fi", "wifi", "wlan", "wireless", "802.11"]):
+                itype = "wifi"
+            elif any(w in name_lower for w in ["tailscale", "tun", "wireguard", "wg", "vpn"]):
+                itype = "vpn"
+            else:
+                itype = "ethernet"
+            ipv4 = ""
+            mac = ""
+            for addr in if_addrs.get(iface_name, []):
+                if addr.family == socket.AF_INET and not addr.address.startswith("127."):
+                    ipv4 = addr.address
+                elif getattr(addr, "family", None) in (getattr(psutil, "AF_LINK", None), getattr(socket, "AF_PACKET", None)):
+                    mac = addr.address
+            if stats.isup and ipv4:
+                interfaces.append({
+                    "name": iface_name,
+                    "type": itype,
+                    "isup": stats.isup,
+                    "speed": stats.speed,
+                    "ip": ipv4,
+                    "mac": mac
+                })
+    except Exception:
+        pass
+    return {
+        "internet": net_status,
+        "gateway": gateway,
+        "local_ip": local_ip,
+        "traffic": traffic,
+        "interfaces": interfaces
+    }
 
 @app.get("/api/sentinel/models")
 def get_available_models():

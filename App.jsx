@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers, Plus, CheckCircle2, AlertCircle, AlertTriangle, Cable, Filter, Sliders, Globe, Radio, Key, Copy, Search } from 'lucide-react';
+import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers, Plus, CheckCircle2, AlertCircle, AlertTriangle, Cable, Filter, Sliders, Globe, Radio, Key, Copy, Search, Wifi, WifiOff, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Terminal as TerminalXTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -41,7 +41,7 @@ function App() {
   const [showSentinelIntro, setShowSentinelIntro] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isGlobalFullscreen, setIsGlobalFullscreen] = useState(false);
-  const [networkSubTab, setNetworkSubTab] = useState('topology');
+  const [networkSubTab, setNetworkSubTab] = useState('status');
 
   // Multi-Server Permanent Connections & Telemetry State
   const [connectedServers, setConnectedServers] = useState(() => {
@@ -530,6 +530,29 @@ function App() {
   const [activeTerminalTabId, setActiveTerminalTabId] = useState('term-local');
   const [isFullscreenTerminal, setIsFullscreenTerminal] = useState(false);
   const [showNewTerminalModal, setShowNewTerminalModal] = useState(false);
+  const [networkDetails, setNetworkDetails] = useState(null);
+  const [netChecking, setNetChecking] = useState(false);
+  const [showNetQuickModal, setShowNetQuickModal] = useState(false);
+
+  const handleCheckNetworkDetails = async () => {
+    setNetChecking(true);
+    try {
+      const res = await fetch(`${API_URL}/network/details`);
+      if (res.ok) {
+        const d = await res.json();
+        setNetworkDetails(d);
+        if (d.internet?.has_internet) {
+          addNotification(`Conectado a Internet (${d.internet.latency_ms || 25}ms)`, "success");
+        } else {
+          addNotification("Modo Red Local: Operando 100% en LAN sin Internet", "info");
+        }
+      }
+    } catch (e) {
+      addNotification("Error al consultar el estado de red", "error");
+    } finally {
+      setNetChecking(false);
+    }
+  };
 
   // References for Web Terminals
   const webTerminalContainerRefs = React.useRef({});
@@ -3097,6 +3120,245 @@ function App() {
     );
   };
 
+  const renderNetworkStatusCard = () => {
+    const net = networkDetails || data?.network || {};
+    const internet = net.internet || {
+      has_internet: true,
+      latency_ms: 25,
+      mode: 'online',
+      status_label: 'Conectado a Internet',
+      message: 'Acceso a WAN/Internet activo. Enlaces remotos y actualizaciones disponibles.'
+    };
+    const hasInternet = Boolean(internet.has_internet);
+    const localIp = net.local_ip || net.primary?.ip || '127.0.0.1';
+    const gateway = net.gateway || '192.168.1.1';
+    const traffic = net.traffic || { upload_kbps: 0, download_kbps: 0, total_sent_mb: 0, total_recv_mb: 0 };
+    const interfaces = net.interfaces && net.interfaces.length > 0 ? net.interfaces : (data?.network?.interfaces || []);
+    const tsIp = data?.tailscale?.Self?.TailscaleIPs?.[0] || (data?.tailscale?.Self?.Addresses?.[0]) || 'No activa';
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        {/* Banner Principal de Conectividad a Internet / Modo Local */}
+        <div style={{
+          background: hasInternet
+            ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 150, 105, 0.05) 100%)'
+            : 'linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(245, 158, 11, 0.06) 100%)',
+          border: hasInternet ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(59, 130, 246, 0.35)',
+          borderRadius: '12px',
+          padding: '1.25rem 1.5rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '1rem',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.25)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1, minWidth: '280px' }}>
+            <div style={{
+              width: '46px',
+              height: '46px',
+              borderRadius: '12px',
+              background: hasInternet ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: hasInternet ? '1px solid #10b981' : '1px solid #3b82f6',
+              boxShadow: hasInternet ? '0 0 16px rgba(16, 185, 129, 0.3)' : '0 0 16px rgba(59, 130, 246, 0.3)'
+            }}>
+              {hasInternet ? <Globe size={26} color="#34d399" /> : <Shield size={26} color="#60a5fa" />}
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: hasInternet ? '#34d399' : '#60a5fa' }}>
+                  {hasInternet ? 'CONECTADO A INTERNET (WAN ACTIVA)' : 'MODO SOBERANO / RED LOCAL PURA (AIR-GAPPED)'}
+                </h3>
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  background: hasInternet ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)',
+                  color: hasInternet ? '#6ee7b7' : '#fcd34d',
+                  border: hasInternet ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(245, 158, 11, 0.4)'
+                }}>
+                  {hasInternet ? `Latencia: ${internet.latency_ms || 25} ms` : '100% Funcional sin Internet'}
+                </span>
+              </div>
+              <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+                {hasInternet
+                  ? 'El servidor tiene enlace directo hacia Internet público. Actualizaciones, agentes remotos y túneles Tailscale están operativos.'
+                  : 'SentinelOS está operando con total soberanía en tu red local (LAN). La telemetría, Docker, terminales, IA local y Klipper funcionan sin internet.'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleCheckNetworkDetails}
+            disabled={netChecking}
+            className="btn btn-secondary"
+            style={{
+              padding: '0.55rem 1rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              background: 'rgba(255,255,255,0.06)',
+              borderColor: 'rgba(255,255,255,0.15)'
+            }}
+          >
+            <RefreshCw size={14} className={netChecking ? "spin" : ""} color="#38bdf8" />
+            {netChecking ? 'Comprobando...' : 'Comprobar Conectividad Ahora'}
+          </button>
+        </div>
+
+        {/* Grid de 4 Métricas Clave de Red */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.85rem' }}>
+          {/* IP Local (LAN) */}
+          <div className="glass-panel" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+              <Router size={20} color="#38bdf8" />
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>IP Local (LAN)</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f8fafc', fontFamily: 'monospace', letterSpacing: '0.03em' }}>{localIp}</div>
+              <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Interfaz: {net.primary?.name || 'Ethernet'}</div>
+            </div>
+          </div>
+
+          {/* Puerta de Enlace (Gateway) */}
+          <div className="glass-panel" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(168, 85, 247, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
+              <Activity size={20} color="#c084fc" />
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Puerta de Enlace (Gateway)</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f8fafc', fontFamily: 'monospace', letterSpacing: '0.03em' }}>{gateway}</div>
+              <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Router / Switch Local</div>
+            </div>
+          </div>
+
+          {/* Tailscale Mesh VPN */}
+          <div className="glass-panel" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+              <Shield size={20} color="#34d399" />
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>IP Tailscale (Malla)</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#f8fafc', fontFamily: 'monospace', letterSpacing: '0.03em' }}>
+                {tsIp}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: tsIp !== 'No activa' ? '#34d399' : '#64748b' }}>
+                {tsIp !== 'No activa' ? 'Enlace P2P Seguro Activo' : 'Red LAN directa'}
+              </div>
+            </div>
+          </div>
+
+          {/* Tráfico en Tiempo Real */}
+          <div className="glass-panel" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+              <Zap size={20} color="#fbbf24" />
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Tráfico de Red en Vivo</div>
+              <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#f8fafc', fontFamily: 'monospace', display: 'flex', gap: '0.6rem' }}>
+                <span style={{ color: '#38bdf8' }}>↑ {traffic.upload_kbps || 0} KB/s</span>
+                <span style={{ color: '#34d399' }}>↓ {traffic.download_kbps || 0} KB/s</span>
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                Total: {traffic.total_sent_mb || 0} MB env / {traffic.total_recv_mb || 0} MB rec
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Lista de Interfaces de Red Detectadas */}
+        <div className="glass-panel" style={{ padding: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, fontSize: '0.95rem', color: '#e2e8f0' }}>
+              <Cable size={18} color="#38bdf8" />
+              <span>Interfaces de Red Físicas y Virtuales</span>
+            </div>
+            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+              {interfaces.length} interfaz(ces) detectada(s)
+            </span>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#64748b', fontSize: '0.72rem', textTransform: 'uppercase' }}>
+                  <th style={{ padding: '0.6rem' }}>Tipo</th>
+                  <th style={{ padding: '0.6rem' }}>Nombre</th>
+                  <th style={{ padding: '0.6rem' }}>Dirección IPv4</th>
+                  <th style={{ padding: '0.6rem' }}>Dirección MAC</th>
+                  <th style={{ padding: '0.6rem' }}>Velocidad Enlace</th>
+                  <th style={{ padding: '0.6rem' }}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {interfaces.map((iface, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <td style={{ padding: '0.6rem' }}>
+                      <span style={{
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        background: iface.type === 'wifi' ? 'rgba(245, 158, 11, 0.15)' : iface.type === 'vpn' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                        color: iface.type === 'wifi' ? '#fbbf24' : iface.type === 'vpn' ? '#34d399' : '#60a5fa'
+                      }}>
+                        {iface.type}
+                      </span>
+                    </td>
+                    <td style={{ padding: '0.6rem', fontWeight: 600, color: '#f1f5f9' }}>{iface.name}</td>
+                    <td style={{ padding: '0.6rem', fontFamily: 'monospace', color: '#38bdf8' }}>{iface.ip || 'Sin IP'}</td>
+                    <td style={{ padding: '0.6rem', fontFamily: 'monospace', color: '#94a3b8' }}>{iface.mac || 'N/A'}</td>
+                    <td style={{ padding: '0.6rem', color: '#cbd5e1' }}>
+                      {iface.speed ? `${iface.speed} Mbps` : 'Auto'}
+                    </td>
+                    <td style={{ padding: '0.6rem' }}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        color: iface.isup ? '#34d399' : '#94a3b8',
+                        fontWeight: 600,
+                        fontSize: '0.75rem'
+                      }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: iface.isup ? '#10b981' : '#64748b' }} />
+                        {iface.isup ? 'ACTIVA / UP' : 'INACTIVA'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Tarjeta Educativa de Soberanía y Red Aislada */}
+        <div style={{
+          background: 'rgba(15, 23, 42, 0.6)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          borderRadius: '10px',
+          padding: '1rem 1.25rem',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '0.85rem'
+        }}>
+          <Shield size={20} color="#38bdf8" style={{ marginTop: '2px', flexShrink: 0 }} />
+          <div style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: '1.45' }}>
+            <strong style={{ color: '#f8fafc' }}>¿Requiere SentinelOS conexión permanente a Internet?</strong>
+            <br />
+            <strong>No.</strong> SentinelOS fue diseñado para ser 100% soberano y autónomo. Todos los componentes (monitoreo de hardware, telemetría, Docker, terminales, control de impresión 3D Klipper y modelos de IA locales) funcionan sin necesidad de conexión externa. La conexión a Internet solo es requerida opcionalmente si deseas utilizar Tailscale para acceso remoto fuera de la LAN o para descargar actualizaciones.
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderNetwork = () => {
     if (!data) {
       return (
@@ -3118,6 +3380,7 @@ function App() {
         {/* Sub-navegación de Red y Topología */}
         <div className="glass-panel" style={{ padding: '0.6rem 1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
           {[
+            { id: 'status', label: 'Estado & Conectividad', icon: <Globe size={16} /> },
             { id: 'topology', label: 'Diagrama de Topología Visual', icon: <Layers size={16} /> },
             { id: 'tailscale', label: 'Tailscale VPN', icon: <Shield size={16} /> },
             { id: 'lan', label: 'Dispositivos LAN & Puertos', icon: <Router size={16} /> },
@@ -3146,6 +3409,11 @@ function App() {
             </button>
           ))}
         </div>
+
+        {/* 0. Estado de Conectividad, Internet e Interfaces de Red */}
+        {(networkSubTab === 'status' || networkSubTab === 'all') && (
+          renderNetworkStatusCard()
+        )}
 
         {/* 1. Vista de Topología Visual Interactiva (Nodos, Sondas, Señales y Recursos) */}
         {(networkSubTab === 'topology' || networkSubTab === 'all') && (
@@ -4495,6 +4763,123 @@ function App() {
             >
               {isGlobalFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
+            {/* Indicador de Red e Internet en Tiempo Real */}
+            {(() => {
+              const netInfo = networkDetails || data?.network;
+              const hasNet = netInfo?.internet?.has_internet ?? true;
+              const latency = netInfo?.internet?.latency_ms;
+              const localIp = netInfo?.local_ip || netInfo?.primary?.ip || '127.0.0.1';
+              const gateway = netInfo?.gateway || '192.168.1.1';
+              const tsIp = data?.tailscale?.Self?.TailscaleIPs?.[0] || 'No activa';
+
+              return (
+                <div style={{ position: 'relative' }}>
+                  <div 
+                    onClick={() => setShowNetQuickModal(!showNetQuickModal)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      padding: '0.3rem 0.75rem',
+                      borderRadius: '20px',
+                      background: hasNet ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                      border: hasNet ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(245, 158, 11, 0.3)',
+                      cursor: 'pointer',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      color: hasNet ? '#34d399' : '#fbbf24',
+                      userSelect: 'none',
+                      transition: 'all 0.2s ease'
+                    }}
+                    title="Clic para ver detalles de red, IP y estado de Internet"
+                  >
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: hasNet ? '#10b981' : '#f59e0b',
+                      boxShadow: hasNet ? '0 0 8px #10b981' : '0 0 8px #f59e0b'
+                    }} />
+                    <Globe size={13} />
+                    <span>
+                      {hasNet 
+                        ? `Internet: Online (${latency ? latency + 'ms' : 'OK'})`
+                        : 'Modo LAN (Sin Internet)'}
+                    </span>
+                  </div>
+
+                  {/* Popover Rápido de Red */}
+                  {showNetQuickModal && (
+                    <div 
+                      onClick={e => e.stopPropagation()}
+                      style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 8px)',
+                        right: 0,
+                        width: '290px',
+                        background: 'rgba(15, 23, 42, 0.98)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        borderRadius: '10px',
+                        boxShadow: '0 12px 32px rgba(0,0,0,0.6)',
+                        padding: '0.9rem',
+                        zIndex: 9999,
+                        color: '#e2e8f0',
+                        cursor: 'default',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.65rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.45rem' }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#60a5fa', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Router size={15} /> Red & Conectividad
+                        </div>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setShowNetQuickModal(false); }}
+                          style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.78rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#94a3b8' }}>Salida Internet:</span>
+                          <span style={{ fontWeight: 700, color: hasNet ? '#34d399' : '#fbbf24' }}>
+                            {hasNet ? `Conectado (${latency ? latency + 'ms' : 'OK'})` : 'Solo Red Local (Air-Gapped)'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#94a3b8' }}>IP Local (LAN):</span>
+                          <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#38bdf8' }}>{localIp}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#94a3b8' }}>Gateway (Router):</span>
+                          <span style={{ fontFamily: 'monospace', color: '#cbd5e1' }}>{gateway}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#94a3b8' }}>Tailscale VPN:</span>
+                          <span style={{ fontFamily: 'monospace', color: tsIp !== 'No activa' ? '#34d399' : '#64748b' }}>{tsIp}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowNetQuickModal(false);
+                          setActiveTab('network');
+                          setNetworkSubTab('status');
+                        }}
+                        className="btn btn-primary"
+                        style={{ width: '100%', padding: '0.45rem', fontSize: '0.76rem', marginTop: '0.2rem', justifyContent: 'center' }}
+                      >
+                        Ver Panel Completo de Red
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div className="status-indicator status-online"></div>
             Server Connected
           </div>
