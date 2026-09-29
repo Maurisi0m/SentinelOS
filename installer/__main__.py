@@ -500,13 +500,11 @@ def main():
     # PASO 6: CONEXIÓN SEGURA TAILSCALE ZERO-CONFIG
     # -------------------------------------------------------------
     print_header(i18n.t("step4"), "6/7")
-    ts_ask = input(i18n.t("tailscale_prompt")).strip().lower()
-    ts_data = {"url": "", "ip": "", "domain": ""}
-    if ts_ask not in ['n', 'no']:
-        ts_data = setup_tailscale_interactive(lang)
-
+    ts_data = setup_tailscale_interactive(lang)
     remote_url = ts_data.get("url", "")
     ts_ip = ts_data.get("ip", "")
+    ts_account = ts_data.get("account", "")
+    ts_tailnet = ts_data.get("tailnet", "")
 
     # -------------------------------------------------------------
     # PASO 6.5: REGLA DE CORTAFUEGOS (WINDOWS DEFENDER / LINUX UFW)
@@ -583,6 +581,8 @@ def main():
         print(f"  {Colors.BOLD}🌐  Enlace Red Local (LAN):{Colors.RESET}     {Colors.CYAN}{local_display_url}{Colors.RESET} (Comprobado ✔)")
         if ts_ip:
             print(f"  {Colors.BOLD}🔒  IP Red Segura Tailscale:{Colors.RESET}   {Colors.CYAN}http://{ts_ip}:8001{Colors.RESET} (Comprobado ✔)")
+        if ts_account:
+            print(f"  {Colors.BOLD}👤  Cuenta Tailscale:{Colors.RESET}          {Colors.CYAN}{ts_account}{Colors.RESET} ({ts_tailnet})")
         if remote_url:
             print(f"  {Colors.BOLD}✨  Enlace Cifrado MagicDNS:{Colors.RESET}   {Colors.GREEN}{remote_url}{Colors.RESET} (HTTPS Cifrado ✔)")
         
