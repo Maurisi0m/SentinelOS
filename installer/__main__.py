@@ -130,7 +130,14 @@ def uninstall_system_cli(os_info: dict, lang="es"):
         subprocess.run("rm -rf /etc/systemd/system/sentinel*.service.d 2>/dev/null || true", shell=True)
         subprocess.run("systemctl daemon-reload 2>/dev/null || true", shell=True)
     else:
-        subprocess.run('taskkill /F /IM uvicorn.exe 2>nul || true', shell=True)
+        # Windows: Terminar procesos uvicorn de forma silenciosa y segura
+        subprocess.run(["taskkill", "/F", "/IM", "uvicorn.exe"], capture_output=True)
+        start_bat = os.path.join(ROOT_DIR, "start_sentinel_bg.bat")
+        if os.path.exists(start_bat):
+            try:
+                os.remove(start_bat)
+            except Exception:
+                pass
     
     print_success("SentinelOS ha sido desinstalado del sistema exitosamente." if lang == "es" else "SentinelOS has been successfully uninstalled.")
     print(f"{Colors.BOLD}{Colors.RED}╰──────────────────────────────────────────────────────────────────╯{Colors.RESET}\n")

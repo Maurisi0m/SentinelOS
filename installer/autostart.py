@@ -122,6 +122,9 @@ def disable_autostart(os_info: dict, root_dir: str):
                 startup_bat = os.path.join(appdata, r"Microsoft\Windows\Start Menu\Programs\Startup\SentinelOS_AutoStart.cmd")
                 if os.path.exists(startup_bat):
                     os.remove(startup_bat)
+            start_bat = os.path.join(root_dir, "start_sentinel_bg.bat")
+            if os.path.exists(start_bat):
+                os.remove(start_bat)
         except Exception:
             pass
     elif system == "Linux":
