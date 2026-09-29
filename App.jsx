@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers, Plus, CheckCircle2, AlertCircle, Cable, Filter, Sliders, Globe, Radio } from 'lucide-react';
+import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers, Plus, CheckCircle2, AlertCircle, AlertTriangle, Cable, Filter, Sliders, Globe, Radio } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Terminal as TerminalXTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -64,6 +64,15 @@ function App() {
   // Multi-Server Logs State
   const [selectedLogServers, setSelectedLogServers] = useState(['local']);
   const [remoteLogs, setRemoteLogs] = useState({});
+
+  // System Maintenance & Uninstall State
+  const [uninstallModalOpen, setUninstallModalOpen] = useState(false);
+  const [uninstallConfirmText, setUninstallConfirmText] = useState('');
+  const [uninstallPurgeData, setUninstallPurgeData] = useState(false);
+  const [uninstallTargetServer, setUninstallTargetServer] = useState('local');
+  const [uninstallLoading, setUninstallLoading] = useState(false);
+  const [uninstallStatusMsg, setUninstallStatusMsg] = useState(null);
+  const [uninstallCompleted, setUninstallCompleted] = useState(false);
 
   // Persistir servidores conectados en localStorage
   useEffect(() => {
@@ -273,6 +282,58 @@ function App() {
       return filtered.length > 0 ? filtered : ['local'];
     });
     addNotification('Servidor desconectado del panel.', 'info');
+  };
+
+  const handleUninstallSubmit = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (uninstallConfirmText.trim().toUpperCase() !== 'DESINSTALAR') return;
+    setUninstallLoading(true);
+    setUninstallStatusMsg(null);
+
+    try {
+      if (uninstallTargetServer === 'local') {
+        const res = await fetch(`${API_URL}/system/uninstall`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm: true, purge_data: uninstallPurgeData })
+        });
+        let respData = {};
+        try {
+          respData = await res.json();
+        } catch (jsonErr) {}
+        if (res.ok) {
+          setUninstallCompleted(true);
+          setUninstallModalOpen(false);
+        } else {
+          setUninstallStatusMsg({ ok: false, msg: respData.detail || 'Error al ejecutar desinstalación' });
+        }
+      } else {
+        const targetSrv = connectedServers.find(s => s.id === uninstallTargetServer);
+        if (targetSrv) {
+          try {
+            const remoteUrl = `${targetSrv.url}/api/system/uninstall`;
+            await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(remoteUrl)}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ confirm: true, purge_data: uninstallPurgeData })
+            });
+          } catch (err) {}
+          handleRemoveServer(targetSrv.id);
+          setUninstallModalOpen(false);
+          addNotification(`Servidor ${targetSrv.name} desinstalado y desvinculado exitosamente.`, 'success');
+        }
+      }
+    } catch (err) {
+      if (uninstallTargetServer === 'local') {
+        // En caso de que el backend local se termine inmediatamente tras la desinstalación
+        setUninstallCompleted(true);
+        setUninstallModalOpen(false);
+      } else {
+        setUninstallStatusMsg({ ok: false, msg: 'Error de comunicación: ' + err.message });
+      }
+    } finally {
+      setUninstallLoading(false);
+    }
   };
 
   // Interactive Onboarding Tour State
@@ -2173,6 +2234,32 @@ function App() {
           </tbody>
         </table>
       </div>
+
+      {/* Danger Zone: Desinstalación del Sistema */}
+      <div className="glass-panel" style={{ padding: '1.25rem', border: '1px solid rgba(239, 68, 68, 0.35)', background: 'linear-gradient(180deg, rgba(239, 68, 68, 0.05) 0%, rgba(15, 23, 42, 0.6) 100%)' }}>
+        <div className="panel-header" style={{ marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <AlertTriangle size={24} color="#ef4444" />
+            <div>
+              <h2 style={{ color: '#f87171', margin: 0, fontSize: '1.1rem' }}>Mantenimiento y Desinstalación de SentinelOS</h2>
+              <p style={{ margin: '0.2rem 0 0', color: '#94a3b8', fontSize: '0.82rem' }}>
+                Detener demonios en segundo plano, remover autoinicio (systemd en Linux o Programador de Tareas en Windows) y desinstalar el programa.
+              </p>
+            </div>
+          </div>
+          <button
+            className="btn btn-danger"
+            onClick={() => {
+              setUninstallTargetServer('local');
+              setUninstallConfirmText('');
+              setUninstallModalOpen(true);
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.1rem', fontWeight: 600 }}
+          >
+            <Trash2 size={16} /> Desinstalar Programa
+          </button>
+        </div>
+      </div>
     </div>
     );
   };
@@ -2826,6 +2913,126 @@ function App() {
     </div>
   );
 
+  const renderUninstallModal = () => (
+    <div className="server-modal-backdrop" onClick={() => !uninstallLoading && setUninstallModalOpen(false)}>
+      <div className="server-modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px', border: '1px solid rgba(239, 68, 68, 0.35)', boxShadow: '0 20px 40px rgba(239, 68, 68, 0.15)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '0.85rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <AlertTriangle size={22} color="#ef4444" />
+            <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#f87171' }}>Desinstalar SentinelOS</h3>
+          </div>
+          <button
+            onClick={() => !uninstallLoading && setUninstallModalOpen(false)}
+            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '8px', padding: '0.85rem 1rem', fontSize: '0.85rem', color: '#cbd5e1', lineHeight: 1.5 }}>
+            <p style={{ margin: '0 0 0.5rem', fontWeight: 600, color: '#f87171' }}>
+              Atención: Esta acción desmantelará los servicios del sistema.
+            </p>
+            <ul style={{ margin: 0, paddingLeft: '1.2rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <li>Detendrá los procesos en segundo plano de SentinelOS y liberará los puertos 8001 / 8080.</li>
+              <li>Eliminará el inicio automático en el sistema (systemd en Linux o Programador de Tareas / Inicio en Windows).</li>
+              <li>Desvinculará este nodo de la red de monitoreo.</li>
+            </ul>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.35rem', fontWeight: 600 }}>
+              Equipo / Nodo a Desinstalar:
+            </label>
+            <select
+              className="os-input"
+              value={uninstallTargetServer}
+              onChange={e => setUninstallTargetServer(e.target.value)}
+              disabled={uninstallLoading}
+              style={{ width: '100%', background: '#0f172a', color: '#f8fafc', padding: '0.6rem 0.75rem', borderRadius: '6px' }}
+            >
+              <option value="local">Host Local (Este equipo)</option>
+              {connectedServers.filter(s => !s.isLocal).map(s => (
+                <option key={s.id} value={s.id}>{s.name} ({s.url})</option>
+              ))}
+            </select>
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.82rem', color: '#cbd5e1', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={uninstallPurgeData}
+              onChange={e => setUninstallPurgeData(e.target.checked)}
+              disabled={uninstallLoading}
+              style={{ accentColor: '#ef4444', width: '16px', height: '16px' }}
+            />
+            <span>Eliminar también archivos de configuración y datos temporales locales (Vault)</span>
+          </label>
+
+          <div style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '0.85rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: '#e2e8f0', marginBottom: '0.4rem' }}>
+              Para confirmar la desinstalación, escribe <strong style={{ color: '#ef4444', letterSpacing: '1px' }}>DESINSTALAR</strong>:
+            </label>
+            <input
+              type="text"
+              className="os-input"
+              placeholder="Escribe DESINSTALAR aquí..."
+              value={uninstallConfirmText}
+              onChange={e => setUninstallConfirmText(e.target.value)}
+              disabled={uninstallLoading}
+              style={{ width: '100%', letterSpacing: '0.5px' }}
+            />
+          </div>
+
+          {uninstallStatusMsg && (
+            <div style={{
+              padding: '0.5rem 0.75rem',
+              borderRadius: '6px',
+              fontSize: '0.8rem',
+              background: uninstallStatusMsg.ok ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+              color: uninstallStatusMsg.ok ? '#34d399' : '#f87171',
+              border: uninstallStatusMsg.ok ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
+            }}>
+              {uninstallStatusMsg.msg}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setUninstallModalOpen(false)}
+              disabled={uninstallLoading}
+              style={{ flex: 1, padding: '0.6rem' }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={handleUninstallSubmit}
+              disabled={uninstallLoading || uninstallConfirmText.trim().toUpperCase() !== 'DESINSTALAR'}
+              style={{
+                flex: 1.4,
+                padding: '0.6rem',
+                opacity: (uninstallConfirmText.trim().toUpperCase() === 'DESINSTALAR' && !uninstallLoading) ? 1 : 0.45,
+                cursor: (uninstallConfirmText.trim().toUpperCase() === 'DESINSTALAR' && !uninstallLoading) ? 'pointer' : 'not-allowed',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem'
+              }}
+            >
+              <Trash2 size={16} />
+              {uninstallLoading ? 'Desinstalando...' : 'Confirmar y Desinstalar'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const isKlipperReady = data?.moonraker?.klippy_state === 'ready';
 
   const navItems = [
@@ -2842,10 +3049,57 @@ function App() {
     { id: 'web-terminal', icon: <TerminalSquare size={20}/>, label: 'Web Terminal' },
   ];
 
+  if (uninstallCompleted) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#0a0f1d',
+        color: '#f8fafc',
+        fontFamily: 'Inter, system-ui, sans-serif',
+        padding: '2rem',
+        textAlign: 'center'
+      }}>
+        <div style={{
+          maxWidth: '520px',
+          background: 'rgba(15, 23, 42, 0.85)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '16px',
+          padding: '2.5rem',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.6)'
+        }}>
+          <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
+            <CheckCircle2 size={36} color="#10b981" />
+          </div>
+          <h2 style={{ fontSize: '1.5rem', margin: '0 0 0.75rem', color: '#ffffff' }}>SentinelOS Desinstalado</h2>
+          <p style={{ color: '#94a3b8', lineHeight: 1.6, margin: '0 0 1.25rem', fontSize: '0.92rem' }}>
+            Los servicios en segundo plano fueron detenidos y el inicio automático ha sido removido exitosamente del sistema.
+          </p>
+          <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0 0 1.75rem' }}>
+            Los puertos y recursos locales han quedado liberados. Ya puedes cerrar esta pestaña del navegador.
+          </p>
+          <button
+            onClick={() => window.close()}
+            className="btn btn-primary"
+            style={{ padding: '0.65rem 1.4rem', fontSize: '0.88rem' }}
+          >
+            Cerrar Ventana
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="os-container">
       {/* Modal de Conexión y Gestión de Servidores */}
       {serverModalOpen && renderServerModal()}
+
+      {/* Modal de Desinstalación del Sistema */}
+      {uninstallModalOpen && renderUninstallModal()}
 
       {/* Toast Notifications */}
       <div className="toast-container">
@@ -2966,6 +3220,38 @@ function App() {
             </div>
           ))}
         </nav>
+
+        <div style={{ marginTop: 'auto', padding: '0.65rem 0.75rem', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+          <button
+            onClick={() => {
+              setUninstallTargetServer('local');
+              setUninstallConfirmText('');
+              setUninstallModalOpen(true);
+            }}
+            title={sidebarCollapsed ? "Desinstalar SentinelOS" : undefined}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+              gap: '0.65rem',
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              color: '#f87171',
+              padding: '0.45rem 0.65rem',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '0.78rem',
+              fontWeight: 500,
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'}
+          >
+            <Trash2 size={15} color="#ef4444" />
+            {!sidebarCollapsed && <span>Desinstalar SentinelOS</span>}
+          </button>
+        </div>
       </aside>
       <main className="os-main">
         <header className="os-topbar">

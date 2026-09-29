@@ -117,7 +117,30 @@ def get_lan_ip() -> str:
     except Exception:
         return "127.0.0.1"
 
+def uninstall_system_cli(os_info: dict, lang="es"):
+    print(f"\n{Colors.BOLD}{Colors.RED}╭── DESINSTALACIÓN DE SENTINEL OS ──────────────────────────────────╮{Colors.RESET}")
+    print(f"  {Colors.YELLOW}Deteniendo servicios y eliminando inicio automático...{Colors.RESET}")
+    disable_autostart(os_info, ROOT_DIR)
+    
+    # Detener procesos en ejecución
+    if os_info["system"] == "Linux":
+        subprocess.run("systemctl stop labsentinel.service sentinel.service sentinel-orchestrator.service 2>/dev/null || true", shell=True)
+        subprocess.run("systemctl disable labsentinel.service sentinel.service sentinel-orchestrator.service 2>/dev/null || true", shell=True)
+        subprocess.run("rm -f /etc/systemd/system/labsentinel.service /etc/systemd/system/sentinel.service /etc/systemd/system/sentinel-orchestrator.service", shell=True)
+        subprocess.run("rm -rf /etc/systemd/system/sentinel*.service.d 2>/dev/null || true", shell=True)
+        subprocess.run("systemctl daemon-reload 2>/dev/null || true", shell=True)
+    else:
+        subprocess.run('taskkill /F /IM uvicorn.exe 2>nul || true', shell=True)
+    
+    print_success("SentinelOS ha sido desinstalado del sistema exitosamente." if lang == "es" else "SentinelOS has been successfully uninstalled.")
+    print(f"{Colors.BOLD}{Colors.RED}╰──────────────────────────────────────────────────────────────────╯{Colors.RESET}\n")
+
 def main():
+    if "--uninstall" in sys.argv:
+        os_info = get_detailed_os()
+        uninstall_system_cli(os_info, "es")
+        return
+
     auto_bootstrap_venv()
 
     # -------------------------------------------------------------
@@ -175,8 +198,18 @@ def main():
     print(f"  {Colors.BOLD}[3]{Colors.RESET} {Colors.GREEN}Nodo de Red / Sentinel Mesh (Interconexión Segura){Colors.RESET}")
     print("      Configuración especializada de red cifrada multi-nodo.\n")
 
+    print(f"  {Colors.BOLD}[4]{Colors.RESET} {Colors.RED}Desinstalar SentinelOS (Detener y remover servicios de este equipo){Colors.RESET}\n")
+
     role_choice = input("Selecciona una opción / Select an option [1]: ").strip()
     node_role = "master"
+
+    if role_choice == "4":
+        confirm = input("¿Estás seguro de que deseas desinstalar SentinelOS de este equipo? (s/N): ").strip().lower()
+        if confirm in ['s', 'si', 'y']:
+            uninstall_system_cli(os_info, lang)
+        else:
+            print("Operación cancelada.")
+        return
 
     if role_choice == "2":
         print("\n" + "-" * 70)

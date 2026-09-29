@@ -820,6 +820,83 @@ def get_node_info():
         "version": "2.0.0"
     }
 
+class SystemUninstallRequest(BaseModel):
+    confirm: bool = False
+    purge_data: bool = False
+
+@app.post("/api/system/uninstall")
+def uninstall_system(req: SystemUninstallRequest):
+    if not req.confirm:
+        raise HTTPException(status_code=400, detail="Confirmación explícita requerida para desinstalar SentinelOS.")
+    
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    results = []
+
+    # 1. Deshabilitar autoinicio en Windows o Linux
+    if sys.platform == "win32":
+        try:
+            res = subprocess.run('schtasks /Delete /TN "SentinelOS_Service" /F', shell=True, capture_output=True, text=True)
+            results.append("Tarea programada de Windows removida.")
+        except Exception as e:
+            results.append(f"Aviso tarea programada: {e}")
+        
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            startup_bat = os.path.join(appdata, r"Microsoft\Windows\Start Menu\Programs\Startup\SentinelOS_AutoStart.cmd")
+            if os.path.exists(startup_bat):
+                try:
+                    os.remove(startup_bat)
+                    results.append("Acceso de autoinicio en Startup eliminado.")
+                except Exception as e:
+                    results.append(f"Aviso archivo inicio: {e}")
+            
+        start_bat = os.path.join(root_dir, "start_sentinel_bg.bat")
+        if os.path.exists(start_bat):
+            try:
+                os.remove(start_bat)
+                results.append("Script de arranque en segundo plano eliminado.")
+            except Exception:
+                pass
+    else:
+        # Linux systemd
+        cmds = [
+            "systemctl stop labsentinel.service sentinel.service sentinel-orchestrator.service 2>/dev/null || true",
+            "systemctl disable labsentinel.service sentinel.service sentinel-orchestrator.service 2>/dev/null || true",
+            "rm -f /etc/systemd/system/labsentinel.service /etc/systemd/system/sentinel.service /etc/systemd/system/sentinel-orchestrator.service",
+            "rm -rf /etc/systemd/system/sentinel-orchestrator.service.d /etc/systemd/system/sentinel.service.d",
+            "systemctl daemon-reload 2>/dev/null || true"
+        ]
+        for c in cmds:
+            try:
+                subprocess.run(c, shell=True, capture_output=True)
+            except Exception:
+                pass
+        results.append("Servicios systemd detenidos y deshabilitados.")
+
+    if req.purge_data:
+        try:
+            vault_dir = os.path.join(root_dir, "labsentinel_backend", "vault")
+            if os.path.exists(vault_dir):
+                import shutil
+                shutil.rmtree(vault_dir, ignore_errors=True)
+                results.append("Archivos locales de vault eliminados.")
+        except Exception:
+            pass
+
+    # 2. Planificar detención del backend local tras retornar la respuesta
+    def delayed_shutdown():
+        time.sleep(1.5)
+        os._exit(0)
+
+    import threading
+    threading.Thread(target=delayed_shutdown, daemon=True).start()
+
+    return {
+        "status": "success",
+        "message": "SentinelOS ha sido desprogramado del autoinicio y los servicios del sistema han sido removidos exitosamente.",
+        "details": results
+    }
+
 @app.get("/api/data")
 def get_data():
     global LAST_ACTIVE_TIME
