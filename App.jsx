@@ -64,6 +64,12 @@ function App() {
   // Multi-Server Logs State
   const [selectedLogServers, setSelectedLogServers] = useState(['local']);
   const [remoteLogs, setRemoteLogs] = useState({});
+  const [logViewMode, setLogViewMode] = useState('windows'); // 'windows' | 'tabs' | 'consolidated'
+  const [activeLogTab, setActiveLogTab] = useState('local');
+  const [logSearchMap, setLogSearchMap] = useState({});
+  const [logPausedMap, setLogPausedMap] = useState({});
+  const [logCopiedMap, setLogCopiedMap] = useState({});
+  const [logClearedMap, setLogClearedMap] = useState({});
 
   // System Maintenance & Uninstall State
   const [uninstallModalOpen, setUninstallModalOpen] = useState(false);
@@ -3063,16 +3069,245 @@ function App() {
   };
 
   const renderLogs = () => {
-    const isVistaCompletaLogs = selectedLogServers.length === connectedServers.length && connectedServers.length > 1;
-
-    // Consolidar logs locales y remotos
-    const combinedLogEntries = [];
-
-    // Logs locales
+    // 1. Recopilar listas de líneas por servidor
     const localLines = (wsLogs && wsLogs.length > 0)
       ? wsLogs
       : (sysLogs ? sysLogs.split('\n').filter(Boolean) : []);
 
+    const serverLogMap = {
+      'local': {
+        server: connectedServers.find(s => s.id === 'local') || { id: 'local', name: 'Host Maestro (Local)', isLocal: true, status: 'online' },
+        lines: logClearedMap['local'] ? [] : localLines,
+        badgeColor: '#60a5fa'
+      }
+    };
+
+    connectedServers.filter(s => !s.isLocal).forEach((srv, sIdx) => {
+      const colors = ['#34d399', '#a855f7', '#f59e0b', '#ec4899'];
+      const badgeColor = colors[sIdx % colors.length] || '#34d399';
+      serverLogMap[srv.id] = {
+        server: srv,
+        lines: logClearedMap[srv.id] ? [] : (remoteLogs[srv.id] || []),
+        badgeColor
+      };
+    });
+
+    const isVistaCompletaLogs = selectedLogServers.length === connectedServers.length && connectedServers.length > 1;
+    const serversToDisplay = connectedServers.filter(s => selectedLogServers.includes(s.id));
+
+    // Función auxiliar para copiar logs de una ventana
+    const handleCopyWindowLogs = (srvId, lines) => {
+      try {
+        navigator.clipboard.writeText(lines.join('\n'));
+        setLogCopiedMap(prev => ({ ...prev, [srvId]: true }));
+        setTimeout(() => {
+          setLogCopiedMap(prev => ({ ...prev, [srvId]: false }));
+        }, 2000);
+      } catch (e) {}
+    };
+
+    // Función auxiliar para limpiar la ventana
+    const handleClearWindowLogs = (srvId) => {
+      setLogClearedMap(prev => ({ ...prev, [srvId]: true }));
+    };
+
+    // Renderizar una ventana de terminal individual para un servidor específico
+    const renderTerminalWindow = (srvId) => {
+      const srvData = serverLogMap[srvId];
+      if (!srvData) return null;
+      const srv = srvData.server;
+      const allLines = srvData.lines || [];
+      const searchQuery = (logSearchMap[srvId] || '').toLowerCase();
+      const isPaused = Boolean(logPausedMap[srvId]);
+      const isCopied = Boolean(logCopiedMap[srvId]);
+
+      const visibleLines = allLines.filter(line => {
+        if (!searchQuery) return true;
+        return line.toLowerCase().includes(searchQuery);
+      });
+
+      return (
+        <div
+          key={srvId}
+          className="glass-panel"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            borderRadius: '10px',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            background: 'rgba(10, 15, 29, 0.92)',
+            overflow: 'hidden',
+            minHeight: '440px',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
+          }}
+        >
+          {/* Barra de Título Estilo Mac / Terminal Cyberpunk */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.6rem 0.9rem',
+            background: 'rgba(15, 23, 42, 0.95)',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            flexWrap: 'wrap',
+            gap: '0.5rem'
+          }}>
+            {/* Controles de ventana y Título */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Server size={14} color={srvData.badgeColor} />
+                <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#f8fafc' }}>
+                  {srv.name}
+                </span>
+                <span style={{
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  background: `${srvData.badgeColor}20`,
+                  color: srvData.badgeColor,
+                  border: `1px solid ${srvData.badgeColor}40`
+                }}>
+                  {srv.isLocal ? 'HOST MAESTRO' : 'SATÉLITE'}
+                </span>
+              </div>
+            </div>
+
+            {/* Herramientas de la Ventana: Filtro, Copiar, Limpiar, Pausar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <div style={{ position: 'relative', width: '140px' }}>
+                <Search size={11} style={{ position: 'absolute', left: '7px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+                <input
+                  type="text"
+                  placeholder="Filtrar logs..."
+                  value={logSearchMap[srvId] || ''}
+                  onChange={e => setLogSearchMap(prev => ({ ...prev, [srvId]: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    padding: '0.25rem 0.5rem 0.25rem 1.4rem',
+                    fontSize: '0.72rem',
+                    borderRadius: '4px',
+                    background: 'rgba(0, 0, 0, 0.4)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              <button
+                onClick={() => setLogPausedMap(prev => ({ ...prev, [srvId]: !prev[srvId] }))}
+                className="btn btn-secondary"
+                style={{ padding: '0.25rem 0.45rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                title={isPaused ? "Reanudar auto-scroll" : "Pausar auto-scroll"}
+              >
+                {isPaused ? <Play size={11} color="#10b981" /> : <Square size={11} color="#f59e0b" />}
+                <span style={{ fontSize: '0.68rem' }}>{isPaused ? 'Pausado' : 'En vivo'}</span>
+              </button>
+
+              <button
+                onClick={() => handleCopyWindowLogs(srvId, allLines)}
+                className="btn btn-secondary"
+                style={{ padding: '0.25rem 0.45rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                title="Copiar contenido de esta terminal"
+              >
+                {isCopied ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
+                <span style={{ fontSize: '0.68rem' }}>{isCopied ? 'Copiado' : 'Copiar'}</span>
+              </button>
+
+              <button
+                onClick={() => handleClearWindowLogs(srvId)}
+                className="btn btn-secondary"
+                style={{ padding: '0.25rem 0.45rem', fontSize: '0.72rem' }}
+                title="Limpiar ventana"
+              >
+                <Trash2 size={11} color="#ef4444" />
+              </button>
+            </div>
+          </div>
+
+          {/* Área de Visualización de Logs de la Ventana */}
+          <div style={{
+            flex: 1,
+            padding: '0.85rem',
+            overflowY: 'auto',
+            fontFamily: 'Consolas, "Fira Code", monospace',
+            fontSize: '0.8rem',
+            lineHeight: '1.45',
+            background: 'rgba(3, 7, 18, 0.88)',
+            color: '#cbd5e1',
+            display: 'flex',
+            flexDirection: 'column-reverse',
+            maxHeight: logViewMode === 'tabs' ? '68vh' : '520px'
+          }}>
+            <div>
+              {visibleLines.length > 0 ? visibleLines.map((line, idx) => {
+                let color = '#cbd5e1';
+                let fontWeight = 400;
+                const l = line.toLowerCase();
+                if (l.includes('crit') || l.includes('fatal')) { color = '#ef4444'; fontWeight = 700; }
+                else if (l.includes('error') || l.includes('fail')) { color = '#f97316'; fontWeight = 600; }
+                else if (l.includes('warn')) color = '#eab308';
+                else if (l.includes('info') || l.includes('success')) color = '#38bdf8';
+                else if (l.includes('http') || l.includes('get ') || l.includes('post ')) color = '#a5b4fc';
+
+                return (
+                  <div
+                    key={`${srvId}-line-${idx}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '0.65rem',
+                      padding: '2px 0',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.03)'
+                    }}
+                  >
+                    <span style={{ color: '#475569', fontSize: '0.72rem', userSelect: 'none', width: '28px', textAlign: 'right' }}>
+                      {idx + 1}
+                    </span>
+                    <span style={{ color, fontWeight, flex: 1, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                      {line}
+                    </span>
+                  </div>
+                );
+              }) : (
+                <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem 1rem', fontSize: '0.8rem' }}>
+                  {logClearedMap[srvId]
+                    ? 'Terminal despejada por el usuario. Nuevos eventos aparecerán aquí.'
+                    : (searchQuery
+                      ? `No se encontraron coincidencias para "${searchQuery}".`
+                      : 'Esperando flujo de registros en vivo para este servidor...')}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Pie de Ventana con Estado de Stream */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '0.35rem 0.9rem',
+            background: 'rgba(15, 23, 42, 0.85)',
+            borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+            fontSize: '0.7rem',
+            color: '#64748b',
+            fontFamily: 'monospace'
+          }}>
+            <span>Líneas activas: <strong style={{ color: '#94a3b8' }}>{visibleLines.length}</strong></span>
+            <span>{srv.url ? srv.url : 'http://127.0.0.1:8001'}</span>
+          </div>
+        </div>
+      );
+    };
+
+    // Modo Consolidado (Stream único mezclado si lo eligen)
+    const combinedLogEntries = [];
     if (localLines.length > 0) {
       localLines.forEach((line, idx) => {
         combinedLogEntries.push({
@@ -3084,14 +3319,11 @@ function App() {
         });
       });
     }
-
-    // Logs de servidores remotos vinculados
     Object.entries(remoteLogs).forEach(([srvId, lines]) => {
       const srvObj = connectedServers.find(s => s.id === srvId) || { name: srvId };
       const colors = ['#34d399', '#a855f7', '#f59e0b', '#ec4899'];
       const srvIdx = connectedServers.findIndex(s => s.id === srvId);
       const colorBadge = colors[srvIdx % colors.length] || '#34d399';
-
       lines.forEach((line, idx) => {
         combinedLogEntries.push({
           id: `${srvId}-${idx}`,
@@ -3102,94 +3334,167 @@ function App() {
         });
       });
     });
-
-    // Filtrar por servidores seleccionados por el usuario
     const visibleEntries = combinedLogEntries.filter(entry => selectedLogServers.includes(entry.serverId));
 
     return (
-      <div className="glass-panel" style={{height: '85vh', display: 'flex', flexDirection: 'column'}}>
-        <div className="panel-header" style={{marginBottom: '0.75rem', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem'}}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minHeight: '85vh' }}>
+        {/* Barra Superior con Selector de Modo de Ventanas y Servidores */}
+        <div className="glass-panel" style={{ padding: '0.75rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.85rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Terminal size={24}/>
-            <h2>System Logs (Live Stream Multi-Servidor)</h2>
+            <Terminal size={22} color="#38bdf8" />
+            <div>
+              <h2 style={{ margin: 0, fontSize: '1.05rem', color: '#f8fafc' }}>Terminal de Logs por Servidor</h2>
+              <span style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                Monitoreo de flujo y telemetría por ventanas independientes
+              </span>
+            </div>
           </div>
 
-          {/* Filtros de origen de logs por servidor */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600 }}>Origen:</span>
-
-            {connectedServers.length > 1 && (
+          {/* Selector de Modo de Disposición de Ventanas */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', background: 'rgba(0, 0, 0, 0.4)', borderRadius: '6px', padding: '2px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
               <button
-                className={`server-filter-chip ${isVistaCompletaLogs ? 'vista-completa active' : ''}`}
-                onClick={selectAllLogServers}
-                style={{ padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}
-                title="Ver logs consolidados de todos los servidores en una sola vista"
+                className={`server-filter-chip ${logViewMode === 'windows' ? 'active' : ''}`}
+                onClick={() => setLogViewMode('windows')}
+                style={{ padding: '0.3rem 0.65rem', fontSize: '0.76rem', borderRadius: '4px' }}
+                title="Mostrar cada servidor en su propia ventana en pantalla dividida"
               >
-                <Layers size={13} /> Todos ({connectedServers.length})
+                <Layers size={13} /> Ventanas Separadas
               </button>
-            )}
+              <button
+                className={`server-filter-chip ${logViewMode === 'tabs' ? 'active' : ''}`}
+                onClick={() => setLogViewMode('tabs')}
+                style={{ padding: '0.3rem 0.65rem', fontSize: '0.76rem', borderRadius: '4px' }}
+                title="Mostrar una pestaña individual por cada servidor"
+              >
+                <Server size={13} /> Pestañas
+              </button>
+              <button
+                className={`server-filter-chip ${logViewMode === 'consolidated' ? 'active' : ''}`}
+                onClick={() => setLogViewMode('consolidated')}
+                style={{ padding: '0.3rem 0.65rem', fontSize: '0.76rem', borderRadius: '4px' }}
+                title="Ver flujo unificado de todos los servidores en una sola lista"
+              >
+                <Share2 size={13} /> Stream Único
+              </button>
+            </div>
 
-            {connectedServers.map(srv => {
-              const isSelected = selectedLogServers.includes(srv.id);
-              return (
+            {/* Chips de Selección de Servidores Activos */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+              {connectedServers.length > 1 && (
+                <button
+                  className={`server-filter-chip ${isVistaCompletaLogs ? 'vista-completa active' : ''}`}
+                  onClick={selectAllLogServers}
+                  style={{ padding: '0.3rem 0.6rem', fontSize: '0.76rem' }}
+                >
+                  Todos ({connectedServers.length})
+                </button>
+              )}
+              {connectedServers.map(srv => {
+                const isSelected = selectedLogServers.includes(srv.id);
+                return (
+                  <button
+                    key={srv.id}
+                    className={`server-filter-chip ${isSelected ? 'active' : ''}`}
+                    onClick={() => toggleLogServerSelection(srv.id)}
+                    style={{ padding: '0.3rem 0.6rem', fontSize: '0.76rem' }}
+                  >
+                    {isSelected && <Check size={11} color="#60a5fa" />}
+                    <span>{srv.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* 1. MODO VENTANAS SEPARADAS (SPLIT PANES / GRID DE VENTANAS INDEPENDIENTES) */}
+        {logViewMode === 'windows' && (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: serversToDisplay.length > 1 ? 'repeat(auto-fit, minmax(min(100%, 540px), 1fr))' : '1fr',
+            gap: '1.25rem',
+            flex: 1
+          }}>
+            {serversToDisplay.map(srv => renderTerminalWindow(srv.id))}
+          </div>
+        )}
+
+        {/* 2. MODO PESTAÑAS (TABS INDIVIDUALES A PANTALLA COMPLETA) */}
+        {logViewMode === 'tabs' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
+            <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '0.5rem' }}>
+              {serversToDisplay.map(srv => (
                 <button
                   key={srv.id}
-                  className={`server-filter-chip ${isSelected ? 'active' : ''}`}
-                  onClick={() => toggleLogServerSelection(srv.id)}
-                  style={{ padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}
-                  title={`Alternar logs de ${srv.name}`}
+                  onClick={() => setActiveLogTab(srv.id)}
+                  style={{
+                    padding: '0.4rem 0.9rem',
+                    borderRadius: '6px',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: activeLogTab === srv.id ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                    border: activeLogTab === srv.id ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.08)',
+                    color: activeLogTab === srv.id ? '#60a5fa' : '#94a3b8'
+                  }}
                 >
-                  {isSelected && <Check size={12} color="#60a5fa" />}
-                  <span>{srv.name}</span>
+                  {srv.name}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+            {renderTerminalWindow(activeLogTab)}
           </div>
-        </div>
+        )}
 
-        <div style={{
-          flex: 1,
-          background: 'rgba(0,0,0,0.5)',
-          padding: '1rem',
-          borderRadius: '8px',
-          overflowY: 'auto',
-          fontFamily: 'monospace',
-          fontSize: '0.85rem',
-          whiteSpace: 'pre-wrap',
-          color: '#d1d5db',
-          display: 'flex',
-          flexDirection: 'column-reverse'
-        }}>
-          <div>
-            {visibleEntries.length > 0 ? visibleEntries.map((entry) => {
-              let color = 'inherit';
-              let fontWeight = 'normal';
-              const l = entry.text.toLowerCase();
-              if (l.includes('crit') || l.includes('fatal')) { color = '#ef4444'; fontWeight = 'bold'; }
-              else if (l.includes('error') || l.includes('fail')) color = '#f97316';
-              else if (l.includes('warn')) color = '#eab308';
-              else if (l.includes('info') || l.includes('success')) color = '#38bdf8';
+        {/* 3. MODO CONSOLIDADO (FLUJO UNIFICADO DE TODOS LOS SERVIDORES) */}
+        {logViewMode === 'consolidated' && (
+          <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '520px', padding: '1rem' }}>
+            <div style={{
+              flex: 1,
+              background: 'rgba(3, 7, 18, 0.88)',
+              padding: '1rem',
+              borderRadius: '8px',
+              overflowY: 'auto',
+              fontFamily: 'monospace',
+              fontSize: '0.82rem',
+              whiteSpace: 'pre-wrap',
+              color: '#d1d5db',
+              display: 'flex',
+              flexDirection: 'column-reverse'
+            }}>
+              <div>
+                {visibleEntries.length > 0 ? visibleEntries.map((entry) => {
+                  let color = 'inherit';
+                  let fontWeight = 'normal';
+                  const l = entry.text.toLowerCase();
+                  if (l.includes('crit') || l.includes('fatal')) { color = '#ef4444'; fontWeight = 'bold'; }
+                  else if (l.includes('error') || l.includes('fail')) color = '#f97316';
+                  else if (l.includes('warn')) color = '#eab308';
+                  else if (l.includes('info') || l.includes('success')) color = '#38bdf8';
 
-              return (
-                <div key={entry.id} style={{color, fontWeight, paddingBottom: '0.25rem', marginBottom: '0.25rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'flex-start', gap: '0.5rem'}}>
-                  <span style={{
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    padding: '0.1rem 0.4rem',
-                    borderRadius: '4px',
-                    background: `${entry.colorBadge}20`,
-                    color: entry.colorBadge,
-                    border: `1px solid ${entry.colorBadge}50`,
-                    whiteSpace: 'nowrap'
-                  }}>
-                    [{entry.serverName}]
-                  </span>
-                  <span style={{ flex: 1 }}>{entry.text}</span>
-                </div>
-              );
-            }) : <div style={{color:'var(--text-secondary)'}}>Esperando flujo de registros de los servidores seleccionados...</div>}
+                  return (
+                    <div key={entry.id} style={{ color, fontWeight, paddingBottom: '0.25rem', marginBottom: '0.25rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                      <span style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '0.1rem 0.4rem',
+                        borderRadius: '4px',
+                        background: `${entry.colorBadge}20`,
+                        color: entry.colorBadge,
+                        border: `1px solid ${entry.colorBadge}50`,
+                        whiteSpace: 'nowrap'
+                      }}>
+                        [{entry.serverName}]
+                      </span>
+                      <span style={{ flex: 1 }}>{entry.text}</span>
+                    </div>
+                  );
+                }) : <div style={{ color: 'var(--text-secondary)' }}>Esperando flujo de registros de los servidores seleccionados...</div>}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   };
