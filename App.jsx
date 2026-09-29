@@ -4031,8 +4031,13 @@ function App() {
 
         {/* Formulario para agregar nuevo servidor */}
         <form onSubmit={handleAddServer} style={{ background: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#60a5fa' }}>
-            + Vincular Nuevo Servidor / Nodo
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#60a5fa', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Plus size={15} /> Vincular Servidor, Satélite u otro Cockpit
+            </div>
+            <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+              Conecta otro Cockpit SentinelOS (Modo Híbrido/Maestro) o un nodo satélite para controlarlo en malla.
+            </div>
           </div>
 
           <div>

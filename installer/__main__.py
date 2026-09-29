@@ -410,10 +410,10 @@ def main():
         print("      - Levanta el demonio en segundo plano 24/7 (auto-arranque en boot).")
         print("      - Genera el Token y la IP para vincularlo a tu Laptop Maestra.\n")
 
-        print(f"  {Colors.BOLD}[B]{Colors.RESET} {Colors.GREEN}Servidor Híbrido (Conexión a Maestro + Interfaz Web Propia){Colors.RESET}")
-        print("      - Proporciona la interfaz web accesible en red local (http://IP:8001).")
-        print("      - Levanta el demonio permanente en segundo plano.")
-        print("      - Genera el Token para vincularlo también a la Laptop Maestra.\n")
+        print(f"  {Colors.BOLD}[B]{Colors.RESET} {Colors.GREEN}Servidor Híbrido / Cockpit Multi-Nodo (Interfaz Web Propia + Enlace a otros Cockpits){Colors.RESET}")
+        print("      - Proporciona su propia interfaz web Cockpit accesible en red local (http://IP:8001).")
+        print("      - Levanta el demonio permanente en segundo plano con inicio automático.")
+        print("      - Genera el Token PIN para vincularse bidireccionalmente con otros Cockpits de la red.\n")
 
         print(f"  {Colors.BOLD}[C]{Colors.RESET} {Colors.YELLOW}Servidor Standalone (Únicamente Dashboard Propio local){Colors.RESET}")
         print("      - Servidor autónomo con panel web local sin vinculación remota.\n")
