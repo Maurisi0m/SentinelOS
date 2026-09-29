@@ -82,6 +82,7 @@ function App() {
 
   // Multi-Server Containers & System/Services State
   const [selectedDockerServer, setSelectedDockerServer] = useState('all');
+  const [selectedTailscaleServer, setSelectedTailscaleServer] = useState('all');
   const [selectedSystemServer, setSelectedSystemServer] = useState('all');
   const [remoteServices, setRemoteServices] = useState({});
   const [procFilterQuery, setProcFilterQuery] = useState('');
@@ -3369,11 +3370,111 @@ function App() {
       );
     }
 
-    // Inject Self into Tailscale Peers if exists
-    const tsPeers = data?.tailscale?.Peer ? Object.values(data.tailscale.Peer) : [];
-    if (data?.tailscale?.Self) {
-      tsPeers.unshift({ ...data.tailscale.Self, HostName: `${data.tailscale.Self.HostName} (Self)` });
+    // Unificar nodos y peers de Tailscale de todos los servidores registrados (Malla Global)
+    const allTsPeers = [];
+    const tsSources = [];
+
+    const isLocalTsActive = Boolean(data?.tailscale?.BackendState === 'Running' || data?.tailscale?.Self);
+    if (isLocalTsActive || data?.tailscale?.Self) {
+      tsSources.push({ id: 'local', name: 'Host Maestro (Local)', tailnet: data.tailscale?.CurrentTailnet?.MagicDNSSuffix || 'Tailnet Local' });
+      if (data?.tailscale?.Self) {
+        allTsPeers.push({
+          ...data.tailscale.Self,
+          HostName: `${data.tailscale.Self.HostName} (Self - Host Maestro)`,
+          serverId: 'local',
+          serverName: 'Host Maestro (Local)',
+          isSelf: true
+        });
+      }
+      if (data?.tailscale?.Peer) {
+        Object.values(data.tailscale.Peer).forEach(p => {
+          if (p && p.HostName) {
+            allTsPeers.push({
+              ...p,
+              serverId: 'local',
+              serverName: 'Host Maestro (Local)',
+              isSelf: false
+            });
+          }
+        });
+      }
     }
+
+    Object.entries(remoteServersData).forEach(([srvId, srvObj]) => {
+      const srvName = connectedServers.find(s => s.id === srvId)?.name || srvId;
+      const rTs = srvObj?.data?.tailscale;
+      const isRemoteTsActive = Boolean(rTs?.BackendState === 'Running' || rTs?.Self);
+      if (isRemoteTsActive) {
+        tsSources.push({ id: srvId, name: srvName, tailnet: rTs?.CurrentTailnet?.MagicDNSSuffix || 'Tailnet Remota' });
+        if (rTs?.Self) {
+          allTsPeers.push({
+            ...rTs.Self,
+            HostName: `${rTs.Self.HostName} (Self - ${srvName})`,
+            serverId: srvId,
+            serverName: srvName,
+            isSelf: true
+          });
+        }
+        if (rTs?.Peer) {
+          Object.values(rTs.Peer).forEach(p => {
+            if (p && p.HostName) {
+              allTsPeers.push({
+                ...p,
+                serverId: srvId,
+                serverName: srvName,
+                isSelf: false
+              });
+            }
+          });
+        }
+      }
+    });
+
+    const uniqueTsPeers = [];
+    const seenIps = new Set();
+    allTsPeers.forEach(p => {
+      const ip = (p.TailscaleIPs || [])[0] || p.HostName;
+      if (selectedTailscaleServer === 'all') {
+        if (!seenIps.has(ip)) {
+          seenIps.add(ip);
+          uniqueTsPeers.push(p);
+        }
+      } else if (p.serverId === selectedTailscaleServer) {
+        uniqueTsPeers.push(p);
+      }
+    });
+
+    const activeTailnet = (selectedTailscaleServer !== 'all' 
+      ? tsSources.find(s => s.id === selectedTailscaleServer)?.tailnet 
+      : null) 
+      || data?.tailscale?.CurrentTailnet?.MagicDNSSuffix 
+      || tsSources[0]?.tailnet 
+      || 'Desconectado';
+
+    const handleTailscaleAction = async (action, params) => {
+      const targetSrvId = selectedTailscaleServer === 'all' ? 'local' : selectedTailscaleServer;
+      if (targetSrvId === 'local') {
+        handleAction('tailscale', { action, params });
+      } else {
+        const srv = connectedServers.find(s => s.id === targetSrvId);
+        if (!srv || !srv.url) return;
+        const targetUrl = srv.url.replace(/\/+$/, '');
+        try {
+          const headers = { 'Content-Type': 'application/json' };
+          if (srv.token) {
+            headers['Authorization'] = `Bearer ${srv.token}`;
+            headers['X-Sentinel-Token'] = srv.token;
+          }
+          await fetch(`${targetUrl}/api/action`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ action: 'tailscale', payload: { action, params } })
+          });
+        } catch (e) {
+          console.error("Error al controlar Tailscale en servidor remoto:", e);
+        }
+      }
+    };
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -3420,30 +3521,90 @@ function App() {
           <NetworkTopologyView data={data} handleAction={handleAction} connectedServers={connectedServers} remoteServersData={remoteServersData} />
         )}
 
-        {/* 2. Gestor Tailscale VPN */}
+        {/* 2. Gestor Tailscale VPN Multi-Servidor */}
         {(networkSubTab === 'tailscale' || networkSubTab === 'all') && (
           <div className="glass-panel">
-            <div className="panel-header" style={{justifyContent: 'space-between'}}>
-              <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem'}}><Shield /><h2>Tailscale VPN Manager</h2></div>
-              <div style={{display: 'flex', gap: '0.5rem'}}>
-                <button className="btn btn-primary" onClick={() => handleAction('tailscale', {action: 'up'})}>TS Up</button>
-                <button className="btn" onClick={() => handleAction('tailscale', {action: 'up', params: '--advertise-exit-node'})}>Advertise Exit Node</button>
-                <button className="btn btn-danger" onClick={() => handleAction('tailscale', {action: 'down'})}>TS Down</button>
+            <div className="panel-header" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <Shield color="#38bdf8" />
+                <div>
+                  <h2 style={{ margin: 0 }}>Tailscale VPN Manager & Malla Zero-Trust</h2>
+                  <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                    Sincronización multi-servidor ({uniqueTsPeers.length} peers detectados en {tsSources.length} nodos activos)
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(0,0,0,0.3)', padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <span style={{ fontSize: '0.76rem', color: '#94a3b8', fontWeight: 600 }}>Servidor:</span>
+                  <button
+                    className={`server-filter-chip ${selectedTailscaleServer === 'all' ? 'active' : ''}`}
+                    onClick={() => setSelectedTailscaleServer('all')}
+                    style={{ padding: '0.25rem 0.6rem', fontSize: '0.76rem' }}
+                  >
+                    Malla Global ({connectedServers.length})
+                  </button>
+                  {connectedServers.map(srv => (
+                    <button
+                      key={srv.id}
+                      className={`server-filter-chip ${selectedTailscaleServer === srv.id ? 'active' : ''}`}
+                      onClick={() => setSelectedTailscaleServer(srv.id)}
+                      style={{ padding: '0.25rem 0.6rem', fontSize: '0.76rem' }}
+                    >
+                      {srv.name}
+                    </button>
+                  ))}
+                </div>
+
+                <button className="btn btn-primary" onClick={() => handleTailscaleAction('up')}>TS Up</button>
+                <button className="btn" onClick={() => handleTailscaleAction('up', '--advertise-exit-node')}>Advertise Exit Node</button>
+                <button className="btn btn-danger" onClick={() => handleTailscaleAction('down')}>TS Down</button>
               </div>
             </div>
-            <div className="stat-row" style={{marginBottom: '1rem'}}><span className="stat-label">Tailnet</span><span className="stat-value" style={{color: 'var(--accent)'}}>{data.tailscale?.CurrentTailnet?.MagicDNSSuffix || 'Disconnected'}</span></div>
+            <div className="stat-row" style={{ marginBottom: '1rem', marginTop: '0.75rem' }}>
+              <span className="stat-label">Tailnet Red:</span>
+              <span className="stat-value" style={{ color: 'var(--accent)', fontWeight: 600 }}>{activeTailnet}</span>
+            </div>
             <table className="os-table">
-              <thead><tr><th>Peer</th><th>OS</th><th>IP (IPv4)</th><th>Last Seen</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Peer / Nodo</th>
+                  <th>Servidor Origen</th>
+                  <th>Sistema Operativo</th>
+                  <th>IP Tailscale (IPv4)</th>
+                  <th>Estado / Última Conexión</th>
+                </tr>
+              </thead>
               <tbody>
-                {tsPeers.map((peer, idx) => (
+                {uniqueTsPeers.map((peer, idx) => (
                   <tr key={idx}>
-                    <td><div style={{display:'flex', alignItems:'center', gap:'0.5rem'}}><div className={`status-indicator ${peer.Online ? 'status-online' : 'status-offline'}`}></div><span style={{fontWeight: peer.HostName.includes('(Self)') ? 'bold' : 'normal'}}>{peer.HostName}</span></div></td>
-                    <td>{peer.OS}</td>
-                    <td>{(peer.TailscaleIPs || [])[0]}</td>
-                    <td style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>{peer.LastSeen ? new Date(peer.LastSeen).toLocaleString() : 'Active'}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div className={`status-indicator ${peer.Online ? 'status-online' : 'status-offline'}`}></div>
+                        <span style={{ fontWeight: peer.isSelf ? 'bold' : 'normal', color: peer.isSelf ? '#38bdf8' : 'inherit' }}>
+                          {peer.HostName}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span style={{ fontSize: '0.74rem', padding: '0.2rem 0.5rem', borderRadius: '4px', background: peer.serverId === 'local' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)', color: peer.serverId === 'local' ? '#60a5fa' : '#34d399', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        {peer.serverName}
+                      </span>
+                    </td>
+                    <td>{peer.OS || 'N/A'}</td>
+                    <td style={{ fontFamily: 'monospace', color: '#38bdf8' }}>{(peer.TailscaleIPs || [])[0]}</td>
+                    <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      {peer.LastSeen ? new Date(peer.LastSeen).toLocaleString() : 'Activo (En línea)'}
+                    </td>
                   </tr>
                 ))}
-                {tsPeers.length === 0 && <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>Tailscale is offline or not configured.</td></tr>}
+                {uniqueTsPeers.length === 0 && (
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
+                      Tailscale no está activo o configurado en los servidores seleccionados.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
