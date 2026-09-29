@@ -13,28 +13,41 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
     
     log_file_path = os.path.join(root_dir, "sentinel_backend.log")
     backend_dir = os.path.join(root_dir, "labsentinel_backend")
+    proc = None
+    system = os_info.get("system", "Linux")
     
-    # 1. Intentar Docker si el daemon está vivo
-    docker_bin = shutil.which("docker")
-    docker_running = False
-    if docker_bin:
-        try:
-            res = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
-            docker_running = (res.returncode == 0)
-        except Exception:
-            docker_running = False
-
-    if docker_running:
-        print_info("Iniciando microservicios de laboratorio con Docker Compose...")
-        subprocess.run(["docker", "compose", "up", "-d"], cwd=root_dir)
-    else:
-        # Modo Nativo Autónomo
-        system = os_info["system"]
-        if system == "Linux" and os.path.exists("/etc/systemd/system/labsentinel.service"):
-            print_info("Iniciando servicios con systemd en Linux...")
-            subprocess.run(["systemctl", "restart", "labsentinel.service"])
+    # 1. Determinar modo de ejecución: Docker solo si se especificó explícitamente --docker
+    use_docker = "--docker" in sys.argv
+    if use_docker:
+        docker_bin = shutil.which("docker")
+        if docker_bin:
+            print_info("Iniciando microservicios de laboratorio con Docker Compose...")
+            subprocess.run(["docker", "compose", "up", "-d"], cwd=root_dir)
         else:
-            # En Windows o sin systemd: arrancar uvicorn en segundo plano con logging
+            print_warning("Docker no encontrado. Conmutando a modo nativo autónomo...")
+            use_docker = False
+
+    if not use_docker:
+        # Modo Nativo Autónomo
+        started_via_systemd = False
+        
+        # En Linux, verificar e iniciar servicio systemd si está disponible
+        if system == "Linux" and (os.path.exists("/etc/systemd/system/labsentinel.service") or os.path.exists("/lib/systemd/system/labsentinel.service")):
+            print_info("Iniciando servicios con systemd en Linux...")
+            # Intentar reload y restart
+            subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
+            res = subprocess.run(["systemctl", "restart", "labsentinel.service"], capture_output=True)
+            if res.returncode != 0:
+                subprocess.run(["sudo", "-n", "systemctl", "restart", "labsentinel.service"], capture_output=True)
+
+            time.sleep(1)
+            chk = subprocess.run(["systemctl", "is-active", "labsentinel.service"], capture_output=True, text=True)
+            if "active" in chk.stdout:
+                started_via_systemd = True
+                print_success("Servicio systemd labsentinel.service activo.")
+
+        if not started_via_systemd:
+            # En Windows o sin systemd activo: arrancar uvicorn como daemon en segundo plano
             print_info("Iniciando backend uvicorn como proceso en segundo plano..." if lang == "es" else "Starting uvicorn backend as a background process...")
             
             # Priorizar siempre el intérprete del entorno virtual aislado si existe
@@ -42,10 +55,11 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
                 venv_py = os.path.join(root_dir, ".venv", "Scripts", "python.exe")
             else:
                 venv_py = os.path.join(root_dir, ".venv", "bin", "python3")
+                if not os.path.exists(venv_py):
+                    venv_py = os.path.join(root_dir, ".venv", "bin", "python")
             py_bin = venv_py if os.path.exists(venv_py) else sys.executable
 
             log_out = open(log_file_path, "a", encoding="utf-8")
-            proc = None
             if system == "Windows":
                 DETACHED_PROCESS = 0x00000008
                 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -74,7 +88,7 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
     
     for attempt in range(1, 25):
         time.sleep(1)
-        if proc and proc.poll() is not None:
+        if proc is not None and proc.poll() is not None:
             print_error(f"El backend uvicorn terminó prematuramente con código {proc.poll()}.")
             break
         try:

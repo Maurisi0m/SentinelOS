@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # -------------------------------------------------------------
   # SENTINEL CORE BACKEND (FastAPI + WebSockets + Mesh Hub)

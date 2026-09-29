@@ -11,17 +11,67 @@ def configure_autostart(os_info: dict, root_dir: str, lang="es") -> bool:
     system = os_info["system"]
     
     if system == "Linux":
-        print_info("Habilitando servicios en systemd para inicio automático..." if lang == "es" else "Enabling systemd autostart...")
+        print_info("Configurando servicios en systemd para inicio automático..." if lang == "es" else "Configuring systemd service for autostart...")
+        import getpass
+        current_user = getpass.getuser()
+        backend_dir = os.path.abspath(os.path.join(root_dir, "labsentinel_backend"))
+        venv_py = os.path.abspath(os.path.join(root_dir, ".venv", "bin", "python3"))
+        if not os.path.exists(venv_py):
+            venv_py = os.path.abspath(os.path.join(root_dir, ".venv", "bin", "python"))
+        py_bin = venv_py if os.path.exists(venv_py) else sys.executable
+        
+        service_content = f"""[Unit]
+Description=Lab Sentinel OS Backend
+After=network.target
+
+[Service]
+User={current_user}
+WorkingDirectory={backend_dir}
+ExecStart={py_bin} -m uvicorn main:app --host 0.0.0.0 --port 8001
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=labsentinel
+
+[Install]
+WantedBy=multi-user.target
+"""
+        service_target = "/etc/systemd/system/labsentinel.service"
+        temp_service = "/tmp/labsentinel.service"
+        try:
+            with open(temp_service, "w", encoding="utf-8") as f:
+                f.write(service_content)
+        except Exception:
+            pass
+
+        installed = False
+        try:
+            with open(service_target, "w", encoding="utf-8") as f:
+                f.write(service_content)
+            installed = True
+        except PermissionError:
+            res = subprocess.run(["sudo", "-n", "cp", temp_service, service_target], capture_output=True)
+            if res.returncode == 0:
+                subprocess.run(["sudo", "-n", "chmod", "644", service_target], capture_output=True)
+                installed = True
+            else:
+                res2 = subprocess.run(f"sudo cp {temp_service} {service_target} && sudo chmod 644 {service_target}", shell=True)
+                installed = (res2.returncode == 0)
+
         cmds = [
-            "systemctl daemon-reload",
-            "systemctl enable labsentinel.service 2>/dev/null || true",
-            "systemctl enable sentinel.service 2>/dev/null || true",
-            "systemctl enable sentinel-orchestrator.service 2>/dev/null || true"
+            "systemctl daemon-reload 2>/dev/null || sudo systemctl daemon-reload 2>/dev/null || true",
+            "systemctl enable labsentinel.service 2>/dev/null || sudo systemctl enable labsentinel.service 2>/dev/null || true"
         ]
         for c in cmds:
             subprocess.run(c, shell=True, capture_output=True)
-        print_success("Inicio automático configurado en systemd." if lang == "es" else "Systemd autostart enabled.")
-        return True
+
+        if installed or os.path.exists(service_target):
+            print_success("Inicio automático configurado en systemd (labsentinel.service)." if lang == "es" else "Systemd autostart enabled (labsentinel.service).")
+            return True
+        else:
+            print_warning("Aviso: No se pudo registrar en /etc/systemd/system/. El sistema iniciará en modo daemon." if lang == "es" else "Notice: Could not register in /etc/systemd/system/. System will run in daemon mode.")
+            return False
 
     elif system == "Windows":
         print_info("Registrando servicio de inicio automático en Windows..." if lang == "es" else "Configuring Windows Startup...")
