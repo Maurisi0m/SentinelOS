@@ -24,6 +24,9 @@ from .tailscale import setup_tailscale_interactive
 from .autostart import configure_autostart, disable_autostart
 from .service_runner import start_and_verify_services
 from .node_token import get_or_create_node_auth
+from .firewall import configure_firewall_rule, remove_firewall_rule, check_firewall_rule
+from .desktop_shortcut import configure_desktop_shortcuts, remove_desktop_shortcuts
+from .port_guard import check_and_resolve_port
 import webbrowser
 import subprocess
 import json
@@ -198,6 +201,10 @@ def uninstall_system_cli(os_info: dict, lang="es"):
             except Exception:
                 pass
     
+    print_info("Removiendo reglas de cortafuegos y accesos directos..." if lang == "es" else "Removing firewall rules and desktop shortcuts...")
+    remove_firewall_rule(os_info, 8001, lang)
+    remove_desktop_shortcuts(ROOT_DIR, os_info)
+    
     print_success("SentinelOS ha sido desinstalado del sistema exitosamente." if lang == "es" else "SentinelOS has been successfully uninstalled.")
     print(f"{Colors.BOLD}{Colors.RED}╰──────────────────────────────────────────────────────────────────╯{Colors.RESET}\n")
 
@@ -286,6 +293,7 @@ def main():
         choice = print_prompt("Selecciona una opción", "1")
 
         if choice in ["", "1"]:
+            configure_desktop_shortcuts(ROOT_DIR, os_info, "es")
             if not existing["is_running"]:
                 start_and_verify_services(os_info, ROOT_DIR, "es")
             else:
@@ -302,6 +310,8 @@ def main():
             print_step("Iniciando actualización y verificación de componentes...")
             ensure_python_libraries("es")
             check_frontend_assets(ROOT_DIR, "es")
+            configure_firewall_rule(os_info, port=8001, lang="es")
+            configure_desktop_shortcuts(ROOT_DIR, os_info, "es")
             start_and_verify_services(os_info, ROOT_DIR, "es")
             try:
                 print_info("Abriendo panel de control en tu navegador predeterminado...")
@@ -493,10 +503,24 @@ def main():
     ts_ip = ts_data.get("ip", "")
 
     # -------------------------------------------------------------
+    # PASO 6.5: REGLA DE CORTAFUEGOS (WINDOWS DEFENDER / LINUX UFW)
+    # -------------------------------------------------------------
+    print_header("Seguridad de Red y Cortafuegos / Firewall Guard", "6.5/7")
+    print_info("Permitir que otros equipos en tu red LAN / Wi-Fi se conecten a este servidor." if lang == "es" else "Allow other machines on your LAN/Wi-Fi to connect to this server.")
+    fw_choice = input("¿Deseas habilitar la regla de firewall para el puerto 8001? (S/n): " if lang == "es" else "Enable firewall rule for port 8001? (Y/n): ").strip().lower()
+    if fw_choice not in ['n', 'no']:
+        configure_firewall_rule(os_info, port=8001, lang=lang)
+    print()
+
+    # -------------------------------------------------------------
     # PASO 7: DESPLIEGUE REAL Y VERIFICACIÓN EN VIVO HTTP
     # -------------------------------------------------------------
     print_header(i18n.t("step5"), "7/7")
     is_healthy, local_base = start_and_verify_services(os_info, ROOT_DIR, lang)
+
+    # Configurar acceso directo en Escritorio y Menú Inicio para el Cockpit
+    if node_role != "server_headless":
+        configure_desktop_shortcuts(ROOT_DIR, os_info, lang)
 
     lan_ip = get_lan_ip()
     local_display_url = f"http://{lan_ip}:8001"

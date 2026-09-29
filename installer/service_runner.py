@@ -7,10 +7,14 @@ y no concluye hasta validar con peticiones HTTP reales que el servidor responde 
 """
 import os, sys, time, subprocess, shutil, urllib.request
 from .banner import Colors, print_info, print_success, print_warning, print_error, print_step
+from .port_guard import check_and_resolve_port
 
-def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[bool, str]:
+def start_and_verify_services(os_info: dict, root_dir: str, lang="es", port: int = 8001) -> tuple[bool, str]:
     print_step("Desplegando y verificando servicios de SentinelOS..." if lang == "es" else "Deploying and verifying SentinelOS services...")
     
+    # 0. Verificación preventiva de puertos (Port Conflict Guard)
+    target_port, _ = check_and_resolve_port(port=port, lang=lang)
+
     log_file_path = os.path.join(root_dir, "sentinel_backend.log")
     backend_dir = os.path.join(root_dir, "labsentinel_backend")
     proc = None
@@ -48,7 +52,7 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
 
         if not started_via_systemd:
             # En Windows o sin systemd activo: arrancar uvicorn como daemon en segundo plano
-            print_info("Iniciando backend uvicorn como proceso en segundo plano..." if lang == "es" else "Starting uvicorn backend as a background process...")
+            print_info(f"Iniciando backend uvicorn en puerto {target_port} en segundo plano..." if lang == "es" else f"Starting uvicorn backend on port {target_port} in background...")
             
             # Priorizar siempre el intérprete del entorno virtual aislado si existe
             if sys.platform == "win32":
@@ -64,7 +68,7 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
                 DETACHED_PROCESS = 0x00000008
                 CREATE_NEW_PROCESS_GROUP = 0x00000200
                 proc = subprocess.Popen(
-                    [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"],
+                    [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", str(target_port)],
                     cwd=backend_dir,
                     stdout=log_out,
                     stderr=log_out,
@@ -73,7 +77,7 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
                 )
             else:
                 proc = subprocess.Popen(
-                    [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"],
+                    [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", str(target_port)],
                     cwd=backend_dir,
                     stdout=log_out,
                     stderr=log_out,
@@ -81,7 +85,7 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
                 )
 
     # 2. Batería de verificación HTTP en vivo (Polling con timeout de 20 segundos)
-    print_info("Esperando respuesta del servidor en http://127.0.0.1:8001..." if lang == "es" else "Waiting for server response on http://127.0.0.1:8001...")
+    print_info(f"Esperando respuesta del servidor en http://127.0.0.1:{target_port}..." if lang == "es" else f"Waiting for server response on http://127.0.0.1:{target_port}...")
     
     server_healthy = False
     start_time = time.time()
@@ -92,22 +96,22 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
             print_error(f"El backend uvicorn terminó prematuramente con código {proc.poll()}.")
             break
         try:
-            req = urllib.request.Request("http://127.0.0.1:8001/api/data", headers={"User-Agent": "SentinelInstaller"})
+            req = urllib.request.Request(f"http://127.0.0.1:{target_port}/api/data", headers={"User-Agent": "SentinelInstaller"})
             with urllib.request.urlopen(req, timeout=3) as resp:
                 if resp.status == 200:
                     latency = round((time.time() - start_time) * 1000)
                     server_healthy = True
-                    print_success(f"Servidor y API de telemetría activos (HTTP 200) en http://127.0.0.1:8001 (Latencia: {latency} ms)")
+                    print_success(f"Servidor y API de telemetría activos (HTTP 200) en http://127.0.0.1:{target_port} (Latencia: {latency} ms)")
                     break
         except Exception:
             # Reintentar probando la ruta raíz
             try:
-                req_root = urllib.request.Request("http://127.0.0.1:8001/", headers={"User-Agent": "SentinelInstaller"})
+                req_root = urllib.request.Request(f"http://127.0.0.1:{target_port}/", headers={"User-Agent": "SentinelInstaller"})
                 with urllib.request.urlopen(req_root, timeout=2) as resp_root:
                     if resp_root.status == 200:
                         latency = round((time.time() - start_time) * 1000)
                         server_healthy = True
-                        print_success(f"Servidor web activo en http://127.0.0.1:8001 (Latencia: {latency} ms)")
+                        print_success(f"Servidor web activo en http://127.0.0.1:{target_port} (Latencia: {latency} ms)")
                         break
             except Exception:
                 pass
@@ -125,6 +129,6 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es") -> tuple[
                         print(f"  {Colors.DIM}{l.rstrip()}{Colors.RESET}")
             except Exception:
                 pass
-        return False, "http://127.0.0.1:8001"
+        return False, f"http://127.0.0.1:{target_port}"
 
-    return True, "http://127.0.0.1:8001"
+    return True, f"http://127.0.0.1:{target_port}"
