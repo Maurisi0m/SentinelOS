@@ -38,26 +38,20 @@ def detect_existing_installation(root_dir: str, os_info: dict) -> dict:
     """Detecta de forma inteligente si SentinelOS ya está instalado o activo en esta máquina."""
     auth_file = os.path.join(root_dir, "config", "node_auth.json")
     start_bat = os.path.join(root_dir, "start_sentinel_bg.bat")
-    venv_dir = os.path.join(root_dir, ".venv")
     systemd_file = "/etc/systemd/system/labsentinel.service"
+    launcher_pyw = os.path.join(root_dir, "launch_cockpit.pyw")
 
-    is_installed = False
     auth_data = {}
+    has_valid_auth = False
 
     if os.path.exists(auth_file):
         try:
             with open(auth_file, "r", encoding="utf-8") as f:
                 auth_data = json.load(f)
-                if auth_data.get("token") or auth_data.get("node_id"):
-                    is_installed = True
+                if auth_data.get("token") and auth_data.get("node_id"):
+                    has_valid_auth = True
         except Exception:
             pass
-
-    if not is_installed:
-        if os.path.exists(start_bat) or os.path.exists(systemd_file):
-            is_installed = True
-        elif os.path.exists(venv_dir) and os.path.exists(os.path.join(root_dir, "labsentinel_backend", "main.py")):
-            is_installed = True
 
     is_running = False
     live_info = {}
@@ -82,11 +76,16 @@ def detect_existing_installation(root_dir: str, os_info: dict) -> dict:
     else:
         has_autostart = os.path.exists(start_bat)
 
+    # Una instalación SOLO se considera existente si:
+    # 1. El servicio está corriendo en vivo en el puerto 8001 (is_running), O
+    # 2. Tiene credenciales reales guardadas (has_valid_auth) Y (tiene autostart programado o launcher configurado)
+    is_installed = is_running or (has_valid_auth and (has_autostart or os.path.exists(launcher_pyw)))
+
     return {
-        "is_installed": is_installed or is_running,
+        "is_installed": is_installed,
         "is_running": is_running,
         "live_info": live_info,
-        "node_auth": auth_data,
+        "node_auth": auth_data if has_valid_auth else {},
         "has_autostart": has_autostart
     }
 
@@ -198,14 +197,29 @@ def uninstall_system_cli(os_info: dict, lang="es"):
         subprocess.run("rm -rf /etc/systemd/system/sentinel*.service.d 2>/dev/null || true", shell=True)
         subprocess.run("systemctl daemon-reload 2>/dev/null || true", shell=True)
     else:
-        # Windows: Terminar procesos uvicorn de forma silenciosa y segura
+        # Windows: Terminar procesos uvicorn y pythonw de forma silenciosa y segura
         subprocess.run(["taskkill", "/F", "/IM", "uvicorn.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/F", "/IM", "pythonw.exe"], capture_output=True)
         start_bat = os.path.join(ROOT_DIR, "start_sentinel_bg.bat")
         if os.path.exists(start_bat):
             try:
                 os.remove(start_bat)
             except Exception:
                 pass
+        launcher_pyw = os.path.join(ROOT_DIR, "launch_cockpit.pyw")
+        if os.path.exists(launcher_pyw):
+            try:
+                os.remove(launcher_pyw)
+            except Exception:
+                pass
+
+    # Limpiar credenciales y archivo de autenticación del nodo
+    auth_file = os.path.join(ROOT_DIR, "config", "node_auth.json")
+    if os.path.exists(auth_file):
+        try:
+            os.remove(auth_file)
+        except Exception:
+            pass
     
     print_info("Removiendo reglas de cortafuegos y accesos directos..." if lang == "es" else "Removing firewall rules and desktop shortcuts...")
     remove_firewall_rule(os_info, 8001, lang)
