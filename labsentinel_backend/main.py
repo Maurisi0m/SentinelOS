@@ -5,6 +5,7 @@ import sys
 import socket
 import re
 import psutil
+import platform
 import shutil
 import subprocess
 import urllib.request
