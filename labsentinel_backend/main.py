@@ -20,7 +20,7 @@ NOTIFICATIONS_QUEUE = deque(maxlen=50)
 def notify(msg: str, type: str = "info"):
     NOTIFICATIONS_QUEUE.append({"msg": msg, "type": type, "ts": time.time()})
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
