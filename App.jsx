@@ -71,6 +71,7 @@ function App() {
   const [newServerForm, setNewServerForm] = useState({ name: '', url: '', token: '' });
   const [serverTestStatus, setServerTestStatus] = useState(null);
   const [serverTestLoading, setServerTestLoading] = useState(false);
+  const [meshDiscoveredNodes, setMeshDiscoveredNodes] = useState([]);
 
   // Multi-Server Logs State
   const [selectedLogServers, setSelectedLogServers] = useState(['local']);
@@ -120,73 +121,141 @@ function App() {
     } catch (e) {}
   }, [connectedServers]);
 
-  // Polling de telemetría de servidores remotos
+  // Polling de telemetría de servidores remotos con Malla Inteligente y Auto-Failover
   useEffect(() => {
     const remotes = connectedServers.filter(s => !s.isLocal);
-    if (remotes.length === 0) return;
 
     const pollRemotes = async () => {
+      // 1. Obtener estado global de la malla y nodos descubiertos por Tailscale / reverse push
+      let meshMap = {};
+      try {
+        const mRes = await fetch(`${API_URL}/mesh/nodes`);
+        if (mRes.ok) {
+          const mData = await mRes.json();
+          const nodes = mData.nodes || [];
+          setMeshDiscoveredNodes(nodes);
+          nodes.forEach(n => {
+            if (n.node_id) meshMap[n.node_id.toLowerCase()] = n;
+            if (n.node_name) meshMap[n.node_name.toLowerCase()] = n;
+            (n.candidates || []).forEach(c => {
+              meshMap[c.toLowerCase().replace(/\/+$/, '')] = n;
+            });
+          });
+        }
+      } catch (e) {}
+
+      if (remotes.length === 0) return;
+
       for (const srv of remotes) {
         if (!srv.url) continue;
-        const targetUrl = srv.url.replace(/\/+$/, '');
-        try {
-          let res;
-          const headers = srv.token ? { 'Authorization': `Bearer ${srv.token}`, 'X-Sentinel-Token': srv.token } : {};
-          try {
-            res = await fetch(`${targetUrl}/api/data`, { headers, signal: AbortSignal.timeout(4500) });
-          } catch (directErr) {
-            res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/data')}`, {
-              headers,
-              signal: AbortSignal.timeout(6000)
-            });
-          }
+        const headers = srv.token ? { 'Authorization': `Bearer ${srv.token}`, 'X-Sentinel-Token': srv.token } : {};
+        
+        // Reunir candidatos alternativos para este servidor
+        const candidateUrls = [];
+        const addCand = (u) => {
+          if (!u) return;
+          let clean = u.trim().replace(/\/+$/, '');
+          if (!clean.startsWith('http://') && !clean.startsWith('https://')) clean = `http://${clean}`;
+          if (!clean.includes(':', 7)) clean = `${clean}:8001`;
+          if (!candidateUrls.includes(clean)) candidateUrls.push(clean);
+        };
 
-          if (res.ok) {
-            const rData = await res.json();
-            setRemoteServersData(prev => {
-              const prevNode = prev[srv.id] || {};
-              const curHist = prevNode.history || [];
-              const lastCpu = rData.metrics_history?.[rData.metrics_history.length - 1]?.cpu ?? 0;
-              const lastRam = rData.metrics_history?.[rData.metrics_history.length - 1]?.ram ?? 0;
-              const timeStr = new Date().toLocaleTimeString();
-              const hist = rData.metrics_history?.length ? rData.metrics_history : [...curHist, { time: timeStr, cpu: lastCpu, ram: lastRam }].slice(-30);
+        if (srv.activeUrl) addCand(srv.activeUrl);
+        addCand(srv.url);
+        (srv.candidates || []).forEach(addCand);
 
-              return {
-                ...prev,
-                [srv.id]: {
-                  data: rData,
-                  history: hist,
-                  status: 'online',
-                  lastSeen: Date.now()
-                }
-              };
-            });
-
-            // Si está activo el tab de procesos, obtener servicios remotos
-            if (activeTab === 'processes') {
-              try {
-                let sRes;
-                try {
-                  sRes = await fetch(`${targetUrl}/api/services`, { headers, signal: AbortSignal.timeout(3500) });
-                } catch (e) {
-                  sRes = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/services')}`, {
-                    headers,
-                    signal: AbortSignal.timeout(5000)
-                  });
-                }
-                if (sRes.ok) {
-                  const sBody = await sRes.json();
-                  setRemoteServices(prev => ({ ...prev, [srv.id]: sBody.services || [] }));
-                }
-              } catch(e) {}
+        // Buscar si coincide con algún nodo descubierto en la malla
+        const srvNameLower = (srv.name || '').toLowerCase();
+        const srvUrlLower = (srv.url || '').toLowerCase();
+        let matchedMeshNode = meshMap[srv.id?.toLowerCase()] || meshMap[srvNameLower];
+        if (!matchedMeshNode) {
+          for (const [key, n] of Object.entries(meshMap)) {
+            if (srvUrlLower.includes(key) || key.includes(srvUrlLower) || srvNameLower.includes(n.node_name?.toLowerCase())) {
+              matchedMeshNode = n;
+              break;
             }
-          } else {
-            setRemoteServersData(prev => ({
-              ...prev,
-              [srv.id]: { ...(prev[srv.id] || {}), status: 'offline' }
-            }));
           }
-        } catch (e) {
+        }
+        if (matchedMeshNode) {
+          (matchedMeshNode.candidates || []).forEach(addCand);
+        }
+
+        let fetchSuccess = false;
+        let rData = null;
+        let confirmedWorkingUrl = null;
+
+        // Probar rutas candidatas con timeout agresivo
+        for (const candUrl of candidateUrls) {
+          try {
+            let res;
+            try {
+              res = await fetch(`${candUrl}/api/data`, { headers, signal: AbortSignal.timeout(2200) });
+            } catch (directErr) {
+              res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(candUrl + '/api/data')}`, {
+                headers,
+                signal: AbortSignal.timeout(3200)
+              });
+            }
+
+            if (res && res.ok) {
+              rData = await res.json();
+              confirmedWorkingUrl = res.headers?.get('x-resolved-endpoint') || candUrl;
+              if (confirmedWorkingUrl.startsWith('http://') || confirmedWorkingUrl.startsWith('https://')) {
+                const base = confirmedWorkingUrl.replace(/\/api\/data.*$/, '').replace(/\/+$/, '');
+                srv.activeUrl = base;
+              }
+              fetchSuccess = true;
+              break;
+            }
+          } catch (e) {}
+        }
+
+        // Si la conexión directa/proxy falló, usar telemetría recibida por reverse push heartbeat
+        if (!fetchSuccess && matchedMeshNode && matchedMeshNode.status === 'online' && matchedMeshNode.data && Object.keys(matchedMeshNode.data).length > 0) {
+          rData = matchedMeshNode.data;
+          fetchSuccess = true;
+        }
+
+        if (fetchSuccess && rData) {
+          setRemoteServersData(prev => {
+            const prevNode = prev[srv.id] || {};
+            const curHist = prevNode.history || [];
+            const lastCpu = rData.metrics_history?.[rData.metrics_history.length - 1]?.cpu ?? 0;
+            const lastRam = rData.metrics_history?.[rData.metrics_history.length - 1]?.ram ?? 0;
+            const timeStr = new Date().toLocaleTimeString();
+            const hist = rData.metrics_history?.length ? rData.metrics_history : [...curHist, { time: timeStr, cpu: lastCpu, ram: lastRam }].slice(-30);
+
+            return {
+              ...prev,
+              [srv.id]: {
+                data: rData,
+                history: hist,
+                status: 'online',
+                lastSeen: Date.now()
+              }
+            };
+          });
+
+          // Si está en pestaña procesos, obtener servicios remotos usando la URL confirmada
+          if (activeTab === 'processes') {
+            const targetProcessUrl = srv.activeUrl || srv.url;
+            try {
+              let sRes;
+              try {
+                sRes = await fetch(`${targetProcessUrl}/api/services`, { headers, signal: AbortSignal.timeout(2500) });
+              } catch (e) {
+                sRes = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetProcessUrl + '/api/services')}`, {
+                  headers,
+                  signal: AbortSignal.timeout(3500)
+                });
+              }
+              if (sRes && sRes.ok) {
+                const sBody = await sRes.json();
+                setRemoteServices(prev => ({ ...prev, [srv.id]: sBody.services || [] }));
+              }
+            } catch (e) {}
+          }
+        } else {
           setRemoteServersData(prev => ({
             ...prev,
             [srv.id]: { ...(prev[srv.id] || {}), status: 'offline' }
@@ -4702,6 +4771,74 @@ function App() {
             })}
           </div>
         </div>
+
+        {/* Nodos Detectados en Malla / Tailscale */}
+        {meshDiscoveredNodes.filter(n => !connectedServers.some(s => s.url?.includes(n.node_name) || (n.candidates && n.candidates.some(c => s.url?.includes(c.replace(/https?:\/\//, '').replace(/:.*$/, '')))))).length > 0 && (
+          <div style={{
+            background: 'rgba(16, 185, 129, 0.05)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            borderRadius: '10px',
+            padding: '0.85rem 1rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.6rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Activity size={15} /> Nodos Detectados en la Red / Malla (1-Clic para Conectar)
+              </div>
+              <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Descubrimiento Automático</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+              {meshDiscoveredNodes
+                .filter(n => !connectedServers.some(s => s.url?.includes(n.node_name) || (n.candidates && n.candidates.some(c => s.url?.includes(c.replace(/https?:\/\//, '').replace(/:.*$/, ''))))))
+                .map((node, idx) => (
+                  <div key={idx} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.5rem 0.75rem',
+                    background: 'rgba(0, 0, 0, 0.35)',
+                    border: '1px solid rgba(16, 185, 129, 0.2)',
+                    borderRadius: '6px'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f8fafc' }}>
+                        {node.node_name} <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>({node.platform || 'linux'})</span>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', fontFamily: 'monospace' }}>
+                        {node.candidates?.[0] || 'http://' + node.node_name + ':8001'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        const targetUrl = node.candidates?.[0] || `http://${node.node_name}:8001`;
+                        const newId = `srv-${Date.now()}`;
+                        const newEntry = {
+                          id: newId,
+                          name: node.node_name,
+                          url: targetUrl,
+                          token: '',
+                          isLocal: false,
+                          status: 'online',
+                          candidates: node.candidates || []
+                        };
+                        setConnectedServers(prev => [...prev, newEntry]);
+                        setSelectedServers(prev => [...prev, newId]);
+                        setSelectedLogServers(prev => [...prev, newId]);
+                        addNotification(`Nodo ${node.node_name} vinculado a la malla con éxito.`, 'success');
+                      }}
+                      style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', background: '#059669', borderColor: '#10b981' }}
+                    >
+                      + Conectar a Malla
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
 
         {/* Formulario para agregar nuevo servidor */}
         <form onSubmit={handleAddServer} style={{ background: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>

@@ -23,10 +23,26 @@ def notify(msg: str, type: str = "info"):
 from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 import vault_manager
 import sentinel_service
+try:
+    from mesh_engine import (
+        start_mesh_engine,
+        record_heartbeat,
+        get_mesh_nodes,
+        smart_proxy_fetch,
+        get_self_network_candidates
+    )
+except ImportError:
+    from .mesh_engine import (
+        start_mesh_engine,
+        record_heartbeat,
+        get_mesh_nodes,
+        smart_proxy_fetch,
+        get_self_network_candidates
+    )
 try:
     import winpty
 except ImportError:
@@ -498,6 +514,7 @@ async def metric_collector():
 async def startup_event():
     asyncio.create_task(metric_collector())
     asyncio.create_task(arp_scanner_loop())
+    start_mesh_engine(port=8001, get_telemetry_fn=collect_data)
 
 _CACHED_SYSTEM_DATA = None
 _LAST_FULL_SCAN_TIME = 0.0
@@ -946,13 +963,12 @@ def collect_data() -> dict:
 
 @app.get("/api/remote/proxy")
 async def remote_proxy(request: Request, target_url: str):
-    """Proxy request to remote Sentinel nodes to prevent CORS / Mixed Content issues."""
+    """Proxy request to remote Sentinel nodes with multi-path auto-failover and firewall bypass."""
     try:
         if not (target_url.startswith("http://") or target_url.startswith("https://")):
             raise HTTPException(status_code=400, detail="Invalid target URL")
         
         headers = {
-            "User-Agent": "SentinelOS-Core-Proxy/1.0",
             "Accept": "application/json"
         }
         auth_header = request.headers.get("Authorization")
@@ -962,15 +978,27 @@ async def remote_proxy(request: Request, target_url: str):
         if token_header:
             headers["X-Sentinel-Token"] = token_header
 
-        req = urllib.request.Request(
-            target_url,
-            headers=headers
-        )
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = resp.read()
-            return json.loads(data.decode("utf-8"))
+        data, resolved_url = smart_proxy_fetch(target_url, headers=headers, timeout=2.5)
+        response = JSONResponse(content=data)
+        response.headers["X-Resolved-Endpoint"] = resolved_url
+        return response
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Proxy error: {str(e)}")
+
+@app.post("/api/mesh/heartbeat")
+async def mesh_heartbeat(request: Request):
+    """Recibe telemetría saliente (push) de nodos remotos para eludir bloqueos de firewall entrante."""
+    try:
+        payload = await request.json()
+        client_ip = request.client.host if request.client else ""
+        return record_heartbeat(payload, client_ip=client_ip)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/mesh/nodes")
+def mesh_nodes():
+    """Retorna todos los nodos descubiertos en la malla y sus rutas alternativas."""
+    return {"nodes": get_mesh_nodes(), "candidates": get_self_network_candidates(port=8001)}
 
 @app.post("/api/remote/proxy")
 async def remote_proxy_post(request: Request, target_url: str):
@@ -1044,7 +1072,8 @@ def get_node_info():
         "platform": sys.platform,
         "cores": psutil.cpu_count(logical=True),
         "total_ram_gb": round(psutil.virtual_memory().total / (1024**3), 1),
-        "version": "2.0.0"
+        "version": "2.0.0",
+        "endpoints": get_self_network_candidates(port=8001)
     }
 
 @app.get("/api/node/token")
