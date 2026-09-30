@@ -986,6 +986,7 @@ async def remote_proxy(request: Request, target_url: str):
         raise HTTPException(status_code=502, detail=f"Proxy error: {str(e)}")
 
 @app.post("/api/mesh/heartbeat")
+@app.post("/mesh/heartbeat")
 async def mesh_heartbeat(request: Request):
     """Recibe telemetría saliente (push) de nodos remotos para eludir bloqueos de firewall entrante."""
     try:
@@ -996,6 +997,7 @@ async def mesh_heartbeat(request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/mesh/nodes")
+@app.get("/mesh/nodes")
 def mesh_nodes():
     """Retorna todos los nodos descubiertos en la malla y sus rutas alternativas."""
     return {"nodes": get_mesh_nodes(), "candidates": get_self_network_candidates(port=8001)}
