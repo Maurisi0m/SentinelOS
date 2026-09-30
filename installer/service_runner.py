@@ -72,8 +72,7 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es", port: int
                     cwd=backend_dir,
                     stdout=log_out,
                     stderr=log_out,
-                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-                    close_fds=True
+                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
                 )
             else:
                 proc = subprocess.Popen(

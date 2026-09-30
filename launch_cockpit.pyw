@@ -31,8 +31,7 @@ def main():
                 cwd=BACKEND_DIR,
                 stdout=log_out,
                 stderr=log_out,
-                creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
-                close_fds=True
+                creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
             )
         else:
             venv_py = os.path.join(ROOT_DIR, ".venv", "bin", "python3")
