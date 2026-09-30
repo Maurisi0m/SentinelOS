@@ -123,151 +123,158 @@ function App() {
     } catch (e) {}
   }, [connectedServers]);
 
-  // Polling de telemetría de servidores remotos con Malla Inteligente y Auto-Failover
+  // Polling de telemetría de servidores remotos con Malla Inteligente y Ejecución Paralela
+  const isPollingRemotesRef = useRef(false);
   useEffect(() => {
     const remotes = connectedServers.filter(s => !s.isLocal);
 
     const pollRemotes = async () => {
-      // 1. Obtener estado global de la malla y nodos descubiertos por Tailscale / reverse push
-      let meshMap = {};
+      if (isPollingRemotesRef.current) return;
+      isPollingRemotesRef.current = true;
+
       try {
-        const mRes = await fetch(`${API_URL}/mesh/nodes`);
-        if (mRes.ok) {
-          const mData = await mRes.json();
-          const nodes = mData.nodes || [];
-          setMeshDiscoveredNodes(nodes);
-          nodes.forEach(n => {
-            if (n.node_id) meshMap[n.node_id.toLowerCase()] = n;
-            if (n.node_name) meshMap[n.node_name.toLowerCase()] = n;
-            (n.candidates || []).forEach(c => {
-              meshMap[c.toLowerCase().replace(/\/+$/, '')] = n;
+        // 1. Obtener estado global de la malla y nodos descubiertos
+        let meshMap = {};
+        try {
+          const mRes = await fetch(`${API_URL}/mesh/nodes`, { signal: AbortSignal.timeout(1500) });
+          if (mRes.ok) {
+            const mData = await mRes.json();
+            const nodes = mData.nodes || [];
+            setMeshDiscoveredNodes(nodes);
+            nodes.forEach(n => {
+              if (n.node_id) meshMap[n.node_id.toLowerCase()] = n;
+              if (n.node_name) meshMap[n.node_name.toLowerCase()] = n;
+              (n.candidates || []).forEach(c => {
+                meshMap[c.toLowerCase().replace(/\/+$/, '')] = n;
+              });
             });
-          });
-        }
-      } catch (e) {}
+          }
+        } catch (e) {}
 
-      if (remotes.length === 0) return;
+        if (remotes.length === 0) return;
 
-      for (const srv of remotes) {
-        if (!srv.url) continue;
-        const headers = srv.token ? { 'Authorization': `Bearer ${srv.token}`, 'X-Sentinel-Token': srv.token } : {};
-        
-        // Reunir candidatos alternativos para este servidor
-        const candidateUrls = [];
-        const addCand = (u) => {
-          if (!u) return;
-          let clean = u.trim().replace(/\/+$/, '');
-          if (!clean.startsWith('http://') && !clean.startsWith('https://')) clean = `http://${clean}`;
-          if (!clean.includes(':', 7)) clean = `${clean}:8001`;
-          if (!candidateUrls.includes(clean)) candidateUrls.push(clean);
-        };
+        // 2. Ejecución PARALELA para no trabar el dashboard maestro cuando hay 2+ servidores
+        await Promise.allSettled(remotes.map(async (srv) => {
+          if (!srv.url) return;
+          const headers = srv.token ? { 'Authorization': `Bearer ${srv.token}`, 'X-Sentinel-Token': srv.token } : {};
+          
+          const candidateUrls = [];
+          const addCand = (u) => {
+            if (!u) return;
+            let clean = u.trim().replace(/\/+$/, '');
+            if (!clean.startsWith('http://') && !clean.startsWith('https://')) clean = `http://${clean}`;
+            if (!clean.includes(':', 7)) clean = `${clean}:8001`;
+            if (!candidateUrls.includes(clean)) candidateUrls.push(clean);
+          };
 
-        if (srv.activeUrl) addCand(srv.activeUrl);
-        addCand(srv.url);
-        (srv.candidates || []).forEach(addCand);
+          if (srv.activeUrl) addCand(srv.activeUrl);
+          addCand(srv.url);
+          (srv.candidates || []).forEach(addCand);
 
-        // Buscar si coincide con algún nodo descubierto en la malla
-        const srvNameLower = (srv.name || '').toLowerCase();
-        const srvUrlLower = (srv.url || '').toLowerCase();
-        let matchedMeshNode = meshMap[srv.id?.toLowerCase()] || meshMap[srvNameLower];
-        if (!matchedMeshNode) {
-          for (const [key, n] of Object.entries(meshMap)) {
-            if (srvUrlLower.includes(key) || key.includes(srvUrlLower) || srvNameLower.includes(n.node_name?.toLowerCase())) {
-              matchedMeshNode = n;
-              break;
+          const srvNameLower = (srv.name || '').toLowerCase();
+          const srvUrlLower = (srv.url || '').toLowerCase();
+          let matchedMeshNode = meshMap[srv.id?.toLowerCase()] || meshMap[srvNameLower];
+          if (!matchedMeshNode) {
+            for (const [key, n] of Object.entries(meshMap)) {
+              if (srvUrlLower.includes(key) || key.includes(srvUrlLower) || srvNameLower.includes(n.node_name?.toLowerCase())) {
+                matchedMeshNode = n;
+                break;
+              }
             }
           }
-        }
-        if (matchedMeshNode) {
-          (matchedMeshNode.candidates || []).forEach(addCand);
-        }
-
-        let fetchSuccess = false;
-        let rData = null;
-        let confirmedWorkingUrl = null;
-
-        // Probar rutas candidatas con timeout agresivo
-        for (const candUrl of candidateUrls) {
-          try {
-            let res;
-            try {
-              res = await fetch(`${candUrl}/api/data`, { headers, signal: AbortSignal.timeout(2200) });
-            } catch (directErr) {
-              res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(candUrl + '/api/data')}`, {
-                headers,
-                signal: AbortSignal.timeout(3200)
-              });
+          if (matchedMeshNode) {
+            (matchedMeshNode.candidates || []).forEach(addCand);
+            if (!srv.token && matchedMeshNode.token) {
+              srv.token = matchedMeshNode.token;
             }
+          }
 
-            if (res && res.ok) {
-              rData = await res.json();
-              confirmedWorkingUrl = res.headers?.get('x-resolved-endpoint') || candUrl;
-              if (confirmedWorkingUrl.startsWith('http://') || confirmedWorkingUrl.startsWith('https://')) {
-                const base = confirmedWorkingUrl.replace(/\/api\/data.*$/, '').replace(/\/+$/, '');
-                srv.activeUrl = base;
-              }
-              fetchSuccess = true;
-              break;
-            }
-          } catch (e) {}
-        }
+          let fetchSuccess = false;
+          let rData = null;
+          let confirmedWorkingUrl = null;
 
-        // Si la conexión directa/proxy falló, usar telemetría recibida por reverse push heartbeat
-        if (!fetchSuccess && matchedMeshNode && matchedMeshNode.status === 'online' && matchedMeshNode.data && Object.keys(matchedMeshNode.data).length > 0) {
-          rData = matchedMeshNode.data;
-          fetchSuccess = true;
-        }
-
-        if (fetchSuccess && rData) {
-          setRemoteServersData(prev => {
-            const prevNode = prev[srv.id] || {};
-            const curHist = prevNode.history || [];
-            const lastCpu = rData.metrics_history?.[rData.metrics_history.length - 1]?.cpu ?? 0;
-            const lastRam = rData.metrics_history?.[rData.metrics_history.length - 1]?.ram ?? 0;
-            const timeStr = new Date().toLocaleTimeString();
-            const hist = rData.metrics_history?.length ? rData.metrics_history : [...curHist, { time: timeStr, cpu: lastCpu, ram: lastRam }].slice(-30);
-
-            return {
-              ...prev,
-              [srv.id]: {
-                data: rData,
-                history: hist,
-                status: 'online',
-                lastSeen: Date.now()
-              }
-            };
-          });
-
-          // Si está en pestaña procesos, obtener servicios remotos usando la URL confirmada
-          if (activeTab === 'processes') {
-            const targetProcessUrl = srv.activeUrl || srv.url;
+          for (const candUrl of candidateUrls) {
             try {
-              let sRes;
+              let res;
               try {
-                sRes = await fetch(`${targetProcessUrl}/api/services`, { headers, signal: AbortSignal.timeout(2500) });
-              } catch (e) {
-                sRes = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetProcessUrl + '/api/services')}`, {
+                res = await fetch(`${candUrl}/api/data`, { headers, signal: AbortSignal.timeout(1600) });
+              } catch (directErr) {
+                res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(candUrl + '/api/data')}`, {
                   headers,
-                  signal: AbortSignal.timeout(3500)
+                  signal: AbortSignal.timeout(2200)
                 });
               }
-              if (sRes && sRes.ok) {
-                const sBody = await sRes.json();
-                setRemoteServices(prev => ({ ...prev, [srv.id]: sBody.services || [] }));
+
+              if (res && res.ok) {
+                rData = await res.json();
+                confirmedWorkingUrl = res.headers?.get('x-resolved-endpoint') || candUrl;
+                if (confirmedWorkingUrl.startsWith('http://') || confirmedWorkingUrl.startsWith('https://')) {
+                  const base = confirmedWorkingUrl.replace(/\/api\/data.*$/, '').replace(/\/+$/, '');
+                  srv.activeUrl = base;
+                }
+                fetchSuccess = true;
+                break;
               }
             } catch (e) {}
           }
-        } else {
-          setRemoteServersData(prev => ({
-            ...prev,
-            [srv.id]: { ...(prev[srv.id] || {}), status: 'offline' }
-          }));
-        }
+
+          if (!fetchSuccess && matchedMeshNode && matchedMeshNode.status === 'online' && matchedMeshNode.data && Object.keys(matchedMeshNode.data).length > 0) {
+            rData = matchedMeshNode.data;
+            fetchSuccess = true;
+          }
+
+          if (fetchSuccess && rData) {
+            setRemoteServersData(prev => {
+              const prevNode = prev[srv.id] || {};
+              const curHist = prevNode.history || [];
+              const lastCpu = rData.metrics_history?.[rData.metrics_history.length - 1]?.cpu ?? 0;
+              const lastRam = rData.metrics_history?.[rData.metrics_history.length - 1]?.ram ?? 0;
+              const timeStr = new Date().toLocaleTimeString();
+              const hist = rData.metrics_history?.length ? rData.metrics_history : [...curHist, { time: timeStr, cpu: lastCpu, ram: lastRam }].slice(-30);
+
+              return {
+                ...prev,
+                [srv.id]: {
+                  data: rData,
+                  history: hist,
+                  status: 'online',
+                  lastSeen: Date.now()
+                }
+              };
+            });
+
+            if (activeTab === 'processes') {
+              const targetProcessUrl = srv.activeUrl || srv.url;
+              try {
+                let sRes;
+                try {
+                  sRes = await fetch(`${targetProcessUrl}/api/services`, { headers, signal: AbortSignal.timeout(2000) });
+                } catch (e) {
+                  sRes = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetProcessUrl + '/api/services')}`, {
+                    headers,
+                    signal: AbortSignal.timeout(2500)
+                  });
+                }
+                if (sRes && sRes.ok) {
+                  const sBody = await sRes.json();
+                  setRemoteServices(prev => ({ ...prev, [srv.id]: sBody.services || [] }));
+                }
+              } catch (e) {}
+            }
+          } else {
+            setRemoteServersData(prev => ({
+              ...prev,
+              [srv.id]: { ...(prev[srv.id] || {}), status: 'offline' }
+            }));
+          }
+        }));
+      } finally {
+        isPollingRemotesRef.current = false;
       }
     };
 
     pollRemotes();
-    const interval = setInterval(pollRemotes, 2000);
+    const interval = setInterval(pollRemotes, 3500);
     return () => clearInterval(interval);
   }, [connectedServers, activeTab]);
 
@@ -808,32 +815,43 @@ function App() {
     setIsNetworkScanning(false);
   };
 
+  const lastAptFetchRef = useRef(0);
   const fetchData = async () => {
     try {
-      const res = await fetch(`${API_URL}/data`);
-      const rdata = await res.json();
-      setData(rdata);
-      if (rdata.notifications && rdata.notifications.length > 0) {
-        rdata.notifications.forEach(n => addNotification(n.msg, n.type));
+      const res = await fetch(`${API_URL}/data`, { signal: AbortSignal.timeout(2000) });
+      if (res.ok) {
+        const rdata = await res.json();
+        setData(rdata);
+        if (rdata.notifications && rdata.notifications.length > 0) {
+          rdata.notifications.forEach(n => addNotification(n.msg, n.type));
+        }
       }
       
-      const svcRes = await fetch(`${API_URL}/services`);
-      if (svcRes.ok) setServicesData((await svcRes.json()).services || []);
+      // Consultar servicios solo cuando el usuario está en la pestaña procesos
+      if (activeTab === 'processes') {
+        const svcRes = await fetch(`${API_URL}/services`, { signal: AbortSignal.timeout(2000) });
+        if (svcRes.ok) setServicesData((await svcRes.json()).services || []);
+      }
 
-      const aptRes = await fetch(`${API_URL}/apt`);
-      if (aptRes.ok) setAptData(await aptRes.json());
+      // Consultar paquetes cada 60 segundos como máximo, no cada 2s
+      const now = Date.now();
+      if (now - lastAptFetchRef.current > 60000) {
+        lastAptFetchRef.current = now;
+        const aptRes = await fetch(`${API_URL}/apt`, { signal: AbortSignal.timeout(3000) });
+        if (aptRes.ok) setAptData(await aptRes.json());
+      }
 
       if (activeTab === 'files') {
-        const fsRes = await fetch(`${API_URL}/fs?path=${encodeURIComponent(fsPath)}`);
+        const fsRes = await fetch(`${API_URL}/fs?path=${encodeURIComponent(fsPath)}`, { signal: AbortSignal.timeout(2000) });
         if (fsRes.ok) setFsData(await fsRes.json());
       }
 
       if (activeTab === 'printer') {
-        const histRes = await fetch(`${API_URL}/printer/history`);
+        const histRes = await fetch(`${API_URL}/printer/history`, { signal: AbortSignal.timeout(2000) });
         if (histRes.ok) setPrinterHistory(await histRes.json());
       }
     } catch (e) {
-      console.error(e);
+      console.error("fetchData error:", e);
     } finally {
       setLoading(false);
     }
@@ -841,9 +859,9 @@ function App() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 2000);
+    const interval = setInterval(fetchData, 2500);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeTab, fsPath]);
 
   const handleAction = async (endpoint, body) => {
     try {

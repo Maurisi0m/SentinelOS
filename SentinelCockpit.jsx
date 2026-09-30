@@ -6,7 +6,7 @@ import {
   Bot, Square, Send, Mic, MicOff, Volume2, VolumeX, Sparkles, Network, RefreshCw, 
   Layers, Cpu, Database, ArrowUpRight, Maximize2, Minimize2, Brain, Globe, 
   ChevronDown, ChevronRight, Server, ExternalLink, Sliders, Plus, Clock, Trash2, MessageSquare,
-  Wifi, WifiOff
+  Wifi, WifiOff, Download, CheckCircle2, AlertCircle, X, Terminal, Loader2
 } from 'lucide-react';
 import SentinelGraphView from './SentinelGraphView';
 
@@ -171,6 +171,92 @@ export default function SentinelCockpit({ onExit }) {
   const recognitionRef = useRef(null);
   const abortControllerRef = useRef(null);
   const chatBottomRef = useRef(null);
+
+  // IA Descargar States
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState("sentinel-agentic-1b:latest");
+  const [downloadModelName, setDownloadModelName] = useState("sentinel-agentic-1b");
+  const [downloadLogs, setDownloadLogs] = useState([]);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(null);
+  const [downloadFinished, setDownloadFinished] = useState(false);
+  const [downloadError, setDownloadError] = useState(null);
+  const downloadWsRef = useRef(null);
+  const logsEndRef = useRef(null);
+
+  useEffect(() => {
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollTop = logsEndRef.current.scrollHeight;
+    }
+  }, [downloadLogs]);
+
+  const handleStartDownload = () => {
+    if (!downloadUrl.trim() || isDownloading) return;
+    setIsDownloading(true);
+    setDownloadLogs(["[*] Estableciendo túnel WebSocket con Sentinel backend..."]);
+    setDownloadProgress(null);
+    setDownloadFinished(false);
+    setDownloadError(null);
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/ws/model/download`;
+    let ws;
+    try {
+      ws = new WebSocket(wsUrl);
+      downloadWsRef.current = ws;
+    } catch(err) {
+      setDownloadError("No se pudo instanciar WebSocket: " + err.message);
+      setIsDownloading(false);
+      return;
+    }
+
+    ws.onopen = () => {
+      setDownloadLogs(prev => [...prev, "[*] Conexión establecida. Transmitiendo parámetros de modelo..."]);
+      ws.send(JSON.stringify({
+        url: downloadUrl.trim(),
+        name: downloadModelName.trim() || 'sentinel-model',
+        runtime: 'docker_ollama'
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'log') {
+          setDownloadLogs(prev => [...prev, msg.message]);
+        } else if (msg.type === 'progress') {
+          setDownloadProgress(msg);
+        } else if (msg.type === 'success') {
+          setDownloadLogs(prev => [...prev, `[ÉXITO] ${msg.message}`]);
+          setDownloadFinished(true);
+          setIsDownloading(false);
+          fetchModelInfo();
+        } else if (msg.type === 'error') {
+          setDownloadError(msg.message);
+          setDownloadLogs(prev => [...prev, `[ERROR] ${msg.message}`]);
+          setIsDownloading(false);
+        }
+      } catch (e) {
+        setDownloadLogs(prev => [...prev, event.data]);
+      }
+    };
+
+    ws.onerror = () => {
+      setDownloadError("Error de comunicación WebSocket durante la transferencia.");
+      setIsDownloading(false);
+    };
+
+    ws.onclose = () => {
+      setIsDownloading(false);
+    };
+  };
+
+  const handleCancelDownload = () => {
+    if (downloadWsRef.current) {
+      try { downloadWsRef.current.close(); } catch(e){}
+    }
+    setIsDownloading(false);
+  };
 
   const fetchModelInfo = async () => {
     try {
@@ -570,6 +656,24 @@ const toggleMic = () => {
             <span>LoRA: {loraStats.total_examples || 0}</span>
           </div>
           <button 
+            type="button"
+            className="clean-pill"
+            style={{
+              background: 'rgba(59, 130, 246, 0.18)',
+              border: '1px solid rgba(59, 130, 246, 0.45)',
+              color: '#60a5fa',
+              cursor: 'pointer',
+              fontWeight: 700,
+              gap: '6px',
+              transition: 'all 0.2s ease'
+            }}
+            onClick={() => setShowDownloadModal(true)}
+            title="Descargar y cargar nuevos modelos en Docker Ollama en tiempo real"
+          >
+            <Download size={13} color="#60a5fa" />
+            <span>IA DESCARGAR</span>
+          </button>
+          <button 
             className="tool-icon-btn"
             onClick={() => {
               setVoiceEnabled(!voiceEnabled);
@@ -800,6 +904,343 @@ const toggleMic = () => {
           </div>
         )}
       </div>
+
+      {/* MODAL IA DESCARGAR CON WEBSOCKET Y LOGS EN TIEMPO REAL */}
+      {showDownloadModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '1.5rem'
+        }}>
+          <div style={{
+            background: 'linear-gradient(145deg, #0d1322, #080d18)',
+            border: '1px solid rgba(59, 130, 246, 0.4)',
+            borderRadius: '14px',
+            width: '100%',
+            maxWidth: '680px',
+            boxShadow: '0 25px 60px rgba(0,0,0,0.8), 0 0 35px rgba(59, 130, 246, 0.2)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '1rem 1.25rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              background: 'rgba(15, 23, 42, 0.6)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #2563eb, #38bdf8)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 0 12px rgba(56, 189, 248, 0.4)'
+                }}>
+                  <Download size={18} color="#fff" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#f8fafc', fontWeight: 700 }}>
+                    Descargador de Modelos IA & Autocarga Docker
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.72rem', color: '#94a3b8' }}>
+                    Descarga en streaming vía WebSocket e inyección automática en Docker Ollama
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isDownloading) handleCancelDownload();
+                  setShowDownloadModal(false);
+                }}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Presets Rápidos */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.4rem' }}>
+                  Modelos Rápidos / Recomendados
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {[
+                    { name: 'Sentinel Agentic 1B', id: 'sentinel-agentic-1b:latest', desc: 'GGUF Agéntico Optimizado' },
+                    { name: 'Llama 3.2 1B Instruct', id: 'llama3.2:1b', desc: 'Rápido, 1.3 GB' },
+                    { name: 'Llama 3.2 3B', id: 'llama3.2:3b', desc: 'Precisión, 2.0 GB' },
+                    { name: 'Qwen 2.5 Coder 1.5B', id: 'qwen2.5-coder:1.5b', desc: 'Código & Scripts' }
+                  ].map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        setDownloadUrl(p.id);
+                        setDownloadModelName(p.id.split(':')[0]);
+                      }}
+                      style={{
+                        padding: '0.4rem 0.7rem',
+                        borderRadius: '6px',
+                        fontSize: '0.75rem',
+                        background: downloadUrl === p.id ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                        border: downloadUrl === p.id ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.08)',
+                        color: downloadUrl === p.id ? '#60a5fa' : '#cbd5e1',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Input URL / Identificador */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', color: '#94a3b8', marginBottom: '0.25rem' }}>
+                    URL Hugging Face (.gguf) o Identificador Ollama
+                  </label>
+                  <input
+                    type="text"
+                    value={downloadUrl}
+                    onChange={(e) => setDownloadUrl(e.target.value)}
+                    placeholder="ej. sentinel-agentic-1b:latest o https://huggingface.co/.../model.gguf"
+                    disabled={isDownloading}
+                    style={{
+                      width: '100%',
+                      padding: '0.55rem 0.75rem',
+                      background: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      borderRadius: '6px',
+                      color: '#f8fafc',
+                      fontSize: '0.82rem',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', color: '#94a3b8', marginBottom: '0.25rem' }}>
+                    Nombre en Docker Ollama
+                  </label>
+                  <input
+                    type="text"
+                    value={downloadModelName}
+                    onChange={(e) => setDownloadModelName(e.target.value)}
+                    placeholder="ej. sentinel-agentic-1b"
+                    disabled={isDownloading}
+                    style={{
+                      width: '100%',
+                      padding: '0.55rem 0.75rem',
+                      background: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      borderRadius: '6px',
+                      color: '#f8fafc',
+                      fontSize: '0.82rem',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Barra de Progreso */}
+              {downloadProgress && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8' }}>
+                    <span>{downloadProgress.message}</span>
+                    <span style={{ color: '#38bdf8', fontWeight: 700 }}>{downloadProgress.percent}%</span>
+                  </div>
+                  <div style={{
+                    width: '100%',
+                    height: '6px',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    borderRadius: '3px',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: `${downloadProgress.percent}%`,
+                      height: '100%',
+                      background: 'linear-gradient(90deg, #2563eb, #38bdf8)',
+                      transition: 'width 0.3s ease'
+                    }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Consola Terminal de Logs en Tiempo Real */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Terminal size={12} /> Log de Descarga en Vivo (WebSocket)
+                  </span>
+                  {isDownloading && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', color: '#38bdf8' }}>
+                      <Loader2 size={12} className="spin" /> Transmitiendo...
+                    </span>
+                  )}
+                </div>
+                <div 
+                  ref={logsEndRef}
+                  style={{
+                    height: '160px',
+                    overflowY: 'auto',
+                    background: '#040711',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '6px',
+                    padding: '0.65rem',
+                    fontFamily: 'Consolas, monospace',
+                    fontSize: '0.74rem',
+                    color: '#94a3b8',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '2px',
+                    userSelect: 'text'
+                  }}
+                >
+                  {downloadLogs.length === 0 ? (
+                    <div style={{ color: '#475569', fontStyle: 'italic' }}>
+                      Esperando orden de descarga... Los eventos del proceso aparecerán aquí en vivo.
+                    </div>
+                  ) : (
+                    downloadLogs.map((log, i) => {
+                      const isErr = log.includes('[ERROR]') || log.includes('Error');
+                      const isOk = log.includes('[ÉXITO]') || log.includes('éxito') || log.includes('success');
+                      const isInfo = log.includes('[*]');
+                      return (
+                        <div key={i} style={{
+                          color: isErr ? '#f87171' : isOk ? '#34d399' : isInfo ? '#60a5fa' : '#cbd5e1',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-all'
+                        }}>
+                          {log}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Mensajes de Estado Final */}
+              {downloadFinished && (
+                <div style={{
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '6px',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  color: '#34d399',
+                  fontSize: '0.8rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <CheckCircle2 size={16} />
+                  <span>¡Modelo integrado correctamente en Docker Ollama! Ya puedes seleccionarlo en el menú de modelos.</span>
+                </div>
+              )}
+
+              {downloadError && (
+                <div style={{
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '6px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  color: '#f87171',
+                  fontSize: '0.8rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <AlertCircle size={16} />
+                  <span>{downloadError}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Buttons */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '0.65rem',
+              padding: '0.85rem 1.25rem',
+              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+              background: 'rgba(15, 23, 42, 0.4)'
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isDownloading) handleCancelDownload();
+                  setShowDownloadModal(false);
+                }}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  background: 'transparent',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#cbd5e1',
+                  fontSize: '0.82rem',
+                  cursor: 'pointer'
+                }}
+              >
+                {downloadFinished ? 'Cerrar' : 'Cancelar'}
+              </button>
+              {!downloadFinished && (
+                <button
+                  type="button"
+                  onClick={handleStartDownload}
+                  disabled={isDownloading || !downloadUrl.trim()}
+                  style={{
+                    padding: '0.5rem 1.2rem',
+                    borderRadius: '6px',
+                    background: isDownloading ? '#1e3a8a' : 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                    border: 'none',
+                    color: '#ffffff',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    cursor: isDownloading ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 10px rgba(37, 99, 235, 0.4)'
+                  }}
+                >
+                  {isDownloading ? (
+                    <>
+                      <Loader2 size={14} className="spin" />
+                      <span>Descargando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download size={14} />
+                      <span>Iniciar Descarga</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

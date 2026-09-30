@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SENTINEL OS - Creador de Accesos Directos Nativos de Escritorio y Menú Inicio v2.0
-Crea accesos directos silenciosos (sin ventana negra de terminal) en el Escritorio y Menú Inicio en Windows y Linux.
+SENTINEL OS - Creador de Accesos Directos Nativos de Escritorio y Menú Inicio v2.5
+Crea accesos directos nativos y silenciosos en el Escritorio y Menú Inicio en Windows, Ubuntu, Mint y Debian.
+Garantiza que el acceso directo sea visible y ejecutable en cualquier PC o laptop.
 """
-import os, sys, struct, subprocess, tempfile
+import os, sys, struct, subprocess, tempfile, shutil
 from .banner import Colors, print_success, print_warning, print_info
 
 def generate_sentinel_ico(ico_path: str):
@@ -67,7 +68,6 @@ def is_running():
 
 def main():
     if not is_running():
-        # Priorizar pythonw de .venv para evitar abrir consola negra
         if sys.platform == "win32":
             venv_pyw = os.path.join(ROOT_DIR, ".venv", "Scripts", "pythonw.exe")
             venv_py = os.path.join(ROOT_DIR, ".venv", "Scripts", "python.exe")
@@ -101,9 +101,8 @@ def main():
                 start_new_session=True
             )
 
-        # Esperar hasta que el servidor esté listo
-        for _ in range(12):
-            time.sleep(0.5)
+        for _ in range(15):
+            time.sleep(0.4)
             if is_running():
                 break
 
@@ -116,8 +115,9 @@ if __name__ == "__main__":
         f.write(content)
     return launcher_path
 
-def get_desktop_dir() -> str:
-    """Obtiene la ruta real del Escritorio considerando OneDrive y configuraciones de usuario."""
+def get_all_desktop_dirs() -> list[str]:
+    """Obtiene todas las posibles rutas de Escritorio en el sistema (OneDrive, Usuario, Público, Linux)."""
+    dirs = set()
     if sys.platform == "win32":
         try:
             import winreg
@@ -126,13 +126,39 @@ def get_desktop_dir() -> str:
             winreg.CloseKey(key)
             d = os.path.expandvars(val)
             if os.path.exists(d):
-                return d
+                dirs.add(d)
         except Exception:
             pass
-        fallback = os.path.join(os.environ.get("USERPROFILE", ""), "Desktop")
-        return fallback if os.path.exists(fallback) else os.path.expanduser("~/Desktop")
+
+        u_prof = os.environ.get("USERPROFILE", "")
+        if u_prof:
+            for sub in ["Desktop", "Escritorio", r"OneDrive\Desktop", r"OneDrive\Escritorio"]:
+                p = os.path.join(u_prof, sub)
+                if os.path.exists(p):
+                    dirs.add(p)
+
+        pub = os.environ.get("PUBLIC", r"C:\Users\Public")
+        for sub in ["Desktop", "Escritorio"]:
+            p = os.path.join(pub, sub)
+            if os.path.exists(p):
+                dirs.add(p)
     else:
-        return os.path.expanduser("~/Desktop")
+        # Linux (Ubuntu, Mint, Debian, etc.)
+        home = os.path.expanduser("~")
+        for sub in ["Desktop", "Escritorio"]:
+            p = os.path.join(home, sub)
+            if os.path.exists(p):
+                dirs.add(p)
+        try:
+            res = subprocess.run(["xdg-user-dir", "DESKTOP"], capture_output=True, text=True)
+            if res.returncode == 0 and res.stdout.strip():
+                xdg_d = res.stdout.strip()
+                if os.path.exists(xdg_d):
+                    dirs.add(xdg_d)
+        except Exception:
+            pass
+
+    return [d for d in dirs if os.path.exists(d)]
 
 def get_start_menu_dir() -> str:
     """Obtiene el directorio de Programas del Menú Inicio en Windows o Linux."""
@@ -186,23 +212,27 @@ def configure_desktop_shortcuts(root_dir: str, os_info: dict, lang: str = "es") 
         except Exception:
             pass
 
+    created_any = False
+
     if system == "Windows":
-        # Localizar el ejecutable pythonw (silencioso sin terminal)
         venv_pyw = os.path.join(root_dir, ".venv", "Scripts", "pythonw.exe")
         venv_py = os.path.join(root_dir, ".venv", "Scripts", "python.exe")
         sys_pyw = sys.executable.replace("python.exe", "pythonw.exe")
         target_py = venv_pyw if os.path.exists(venv_pyw) else (sys_pyw if os.path.exists(sys_pyw) else sys.executable)
 
-        desktop_dir = get_desktop_dir()
-        desktop_lnk = os.path.join(desktop_dir, "SentinelOS Cockpit.lnk")
-        success_desktop = create_windows_lnk(
-            target_path=target_py,
-            arguments=f'"{launcher_path}"',
-            working_dir=root_dir,
-            shortcut_path=desktop_lnk,
-            icon_path=ico_path,
-            description="SentinelOS Distributed Cockpit"
-        )
+        desktop_dirs = get_all_desktop_dirs()
+        for d in desktop_dirs:
+            desktop_lnk = os.path.join(d, "SentinelOS Cockpit.lnk")
+            ok = create_windows_lnk(
+                target_path=target_py,
+                arguments=f'"{launcher_path}"',
+                working_dir=root_dir,
+                shortcut_path=desktop_lnk,
+                icon_path=ico_path,
+                description="SentinelOS Distributed Cockpit"
+            )
+            if ok:
+                created_any = True
 
         start_menu_dir = get_start_menu_dir()
         if start_menu_dir:
@@ -216,21 +246,26 @@ def configure_desktop_shortcuts(root_dir: str, os_info: dict, lang: str = "es") 
                 description="SentinelOS Distributed Cockpit"
             )
 
-        if success_desktop:
-            msg = f"Acceso directo creado en el Escritorio: {desktop_lnk}" if lang == "es" else f"Desktop shortcut created: {desktop_lnk}"
+        if created_any:
+            msg = f"Acceso directo creado en el Escritorio ({len(desktop_dirs)} ubicaciones detectadas)." if lang == "es" else "Desktop shortcut created in all detected desktop directories."
             print_success(msg)
             return True
         return False
 
     elif system == "Linux":
-        # Formato estándar FreeDesktop .desktop
+        # Formato estándar FreeDesktop .desktop para Ubuntu, Mint, Debian, Arch
+        venv_py = os.path.join(root_dir, ".venv", "bin", "python3")
+        py_bin = venv_py if os.path.exists(venv_py) else "python3"
         icon_path = os.path.join(root_dir, "labsentinel_backend", "dist", "favicon.svg")
+        if not os.path.exists(icon_path):
+            icon_path = ico_path
+
         desktop_entry = f"""[Desktop Entry]
 Version=1.0
 Type=Application
 Name=SentinelOS Cockpit
 Comment=Laboratorio STEM y Panel de Control Distribuido
-Exec=python3 "{launcher_path}"
+Exec={py_bin} "{launcher_path}"
 Path={root_dir}
 Icon={icon_path}
 Terminal=false
@@ -244,70 +279,66 @@ StartupNotify=true
             with open(app_file, "w", encoding="utf-8") as f:
                 f.write(desktop_entry)
             os.chmod(app_file, 0o755)
+            created_any = True
         except Exception:
             pass
 
-        # Guardar en Escritorio si existe
-        desktop_dir = get_desktop_dir()
-        desktop_file = os.path.join(desktop_dir, "SentinelOS.desktop")
-        try:
-            if os.path.exists(desktop_dir):
+        # Guardar en todos los Escritorios detectados (Desktop, Escritorio, xdg)
+        desktop_dirs = get_all_desktop_dirs()
+        for d in desktop_dirs:
+            desktop_file = os.path.join(d, "SentinelOS.desktop")
+            try:
                 with open(desktop_file, "w", encoding="utf-8") as f:
                     f.write(desktop_entry)
                 os.chmod(desktop_file, 0o755)
-        except Exception:
-            pass
+                # Marcar como confiable en GNOME/Cinnamon (Ubuntu/Mint)
+                try:
+                    subprocess.run(["gio", "set", desktop_file, "metadata::trusted", "true"], capture_output=True)
+                except Exception:
+                    pass
+                created_any = True
+            except Exception:
+                pass
 
-        msg = "Acceso directo creado en Aplicaciones y Escritorio." if lang == "es" else "Desktop entry created in Applications and Desktop."
-        print_success(msg)
-        return True
+        if created_any:
+            msg = "Acceso directo creado en Aplicaciones y Escritorio (Ubuntu / Mint)." if lang == "es" else "Desktop entry created in Applications and Desktop."
+            print_success(msg)
+            return True
 
     return False
 
 def remove_desktop_shortcuts(root_dir: str, os_info: dict):
     """Remueve los accesos directos al desinstalar desde todas las rutas posibles del sistema."""
-    system = os_info.get("system", "Linux")
-    if system == "Windows":
-        candidates = set()
-        candidates.add(get_desktop_dir())
-        candidates.add(get_start_menu_dir())
-        
-        u_prof = os.environ.get("USERPROFILE", "")
-        if u_prof:
-            for sub in ["Desktop", "Escritorio", r"OneDrive\Desktop", r"OneDrive\Escritorio"]:
-                p = os.path.join(u_prof, sub)
-                if os.path.exists(p):
-                    candidates.add(p)
-        pub = os.environ.get("PUBLIC", r"C:\Users\Public")
-        for sub in ["Desktop", "Escritorio"]:
-            p = os.path.join(pub, sub)
-            if os.path.exists(p):
-                candidates.add(p)
-
-        for p in candidates:
-            if p and os.path.exists(p):
-                for name in ["SentinelOS Cockpit.lnk", "SentinelOS.lnk", "Sentinel.lnk"]:
-                    lnk = os.path.join(p, name)
-                    if os.path.exists(lnk):
-                        try:
-                            os.remove(lnk)
-                        except Exception:
-                            pass
-        
-        for f in ["launch_cockpit.pyw", "start_sentinel_bg.bat", "Sentinel.ico", "sentinel_backend.log"]:
-            target = os.path.join(root_dir, f)
-            if os.path.exists(target):
+    names_to_delete = [
+        "SentinelOS Cockpit.lnk",
+        "SentinelOS.lnk",
+        "Sentinel.lnk",
+        "SentinelOS.desktop",
+        "sentinelos.desktop"
+    ]
+    for d in get_all_desktop_dirs():
+        for name in names_to_delete:
+            f = os.path.join(d, name)
+            if os.path.exists(f):
                 try:
-                    os.remove(target)
+                    os.remove(f)
                 except Exception:
                     pass
-    elif system == "Linux":
-        for p in [get_desktop_dir(), get_start_menu_dir(), os.path.expanduser("~/.local/share/applications")]:
-            if p and os.path.exists(p):
-                for name in ["SentinelOS.desktop", "sentinelos.desktop"]:
-                    f = os.path.join(p, name)
-                    if os.path.exists(f):
-                        try:
-                            os.remove(f)
-                        except Exception:
-                            pass
+
+    s_dir = get_start_menu_dir()
+    if s_dir and os.path.exists(s_dir):
+        for name in names_to_delete:
+            f = os.path.join(s_dir, name)
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
+
+    for f in ["launch_cockpit.pyw", "start_sentinel_bg.bat", "Sentinel.ico", "sentinel_backend.log"]:
+        target = os.path.join(root_dir, f)
+        if os.path.exists(target):
+            try:
+                os.remove(target)
+            except Exception:
+                pass

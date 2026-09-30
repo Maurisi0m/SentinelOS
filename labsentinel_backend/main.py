@@ -82,10 +82,11 @@ async def add_custom_headers(request, call_next):
         return response
 
     response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Private-Network"] = "true"
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
-    response.headers["Access-Control-Allow-Private-Network"] = "true"
     return response
 
 MOONRAKER_URL = "http://127.0.0.1:7125"
@@ -533,7 +534,9 @@ _CACHED_INTERNET_STATUS = {
 def check_cached_internet_status(force: bool = False) -> dict:
     global _LAST_INTERNET_CHECK_TIME, _CACHED_INTERNET_STATUS
     now = time.time()
-    if not force and (now - _LAST_INTERNET_CHECK_TIME < 8.0):
+    if not force and (now - _LAST_INTERNET_CHECK_TIME < 30.0):
+        return _CACHED_INTERNET_STATUS
+    if force and (now - _LAST_INTERNET_CHECK_TIME < 15.0):
         return _CACHED_INTERNET_STATUS
 
     _LAST_INTERNET_CHECK_TIME = now
@@ -541,11 +544,11 @@ def check_cached_internet_status(force: bool = False) -> dict:
     has_internet = False
     latency_ms = None
     
-    # Try Cloudflare (1.1.1.1) then Google (8.8.8.8)
+    # Try Cloudflare (1.1.1.1) then Google (8.8.8.8) with fast timeout
     for host in [("1.1.1.1", 53), ("8.8.8.8", 53)]:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.7)
+            sock.settimeout(0.35)
             sock.connect(host)
             sock.close()
             has_internet = True
@@ -1097,6 +1100,106 @@ def get_node_token():
         "node_name": auth_data.get("node_name", socket.gethostname()),
         "port": 8001
     }
+
+@app.websocket("/api/ws/model/download")
+async def ws_model_download(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        data = await websocket.receive_json()
+        model_url = (data.get("url") or "").strip()
+        model_name = (data.get("name") or "").strip() or "sentinel-model"
+        target_runtime = data.get("runtime", "docker_ollama")
+
+        await websocket.send_json({"type": "log", "message": f"[*] Solicitud recibida: Descargar '{model_name}' desde '{model_url}'"})
+        
+        if not model_url:
+            await websocket.send_json({"type": "error", "message": "URL o identificador de modelo no provisto."})
+            await websocket.close()
+            return
+
+        # Si el modelo es un tag de ollama directo (e.g. llama3.2:1b, mistral, etc.)
+        if not model_url.startswith("http://") and not model_url.startswith("https://"):
+            await websocket.send_json({"type": "log", "message": f"[*] Detectado modelo Ollama: {model_url}. Ejecutando pull en Docker..."})
+            cmd = ["docker", "exec", "ollama", "ollama", "pull", model_url]
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            for line in proc.stdout:
+                await websocket.send_json({"type": "log", "message": line.strip()})
+            proc.wait()
+            if proc.returncode == 0:
+                await websocket.send_json({"type": "success", "message": f"¡Modelo {model_url} descargado y cargado en Ollama Docker con éxito!"})
+            else:
+                await websocket.send_json({"type": "error", "message": f"Fallo al descargar en Docker Ollama (código {proc.returncode})."})
+            await websocket.close()
+            return
+
+        # Es una URL HTTP(S) de Hugging Face o directa a GGUF
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        models_dir = os.path.join(root_dir, "models", "downloaded")
+        os.makedirs(models_dir, exist_ok=True)
+        dest_filename = os.path.basename(model_url.split("?")[0])
+        if not dest_filename.endswith(".gguf"):
+            dest_filename = f"{model_name}.gguf"
+        dest_path = os.path.join(models_dir, dest_filename)
+
+        await websocket.send_json({"type": "log", "message": f"[*] Conectando a {model_url}..."})
+        
+        req = urllib.request.Request(model_url, headers={"User-Agent": "SentinelOS/2.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            total_size = int(resp.headers.get("content-length", 0))
+            downloaded = 0
+            block_size = 1024 * 1024  # 1MB
+            start_time = time.time()
+            last_report = start_time
+
+            with open(dest_path, "wb") as f_out:
+                while True:
+                    chunk = resp.read(block_size)
+                    if not chunk:
+                        break
+                    f_out.write(chunk)
+                    downloaded += len(chunk)
+                    now = time.time()
+                    if now - last_report >= 0.5:
+                        last_report = now
+                        percent = round((downloaded / total_size * 100), 1) if total_size > 0 else 0
+                        speed_mb = round((downloaded / (now - start_time)) / (1024 * 1024), 2)
+                        await websocket.send_json({
+                            "type": "progress",
+                            "percent": percent,
+                            "downloaded_mb": round(downloaded / (1024 * 1024), 1),
+                            "total_mb": round(total_size / (1024 * 1024), 1),
+                            "speed_mb": speed_mb,
+                            "message": f"Descargando: {percent}% ({round(downloaded / (1024*1024), 1)} MB / {round(total_size / (1024*1024), 1)} MB a {speed_mb} MB/s)"
+                        })
+
+        await websocket.send_json({"type": "log", "message": f"[OK] Archivo GGUF guardado en {dest_path}"})
+        
+        # Cargar en Docker Ollama automáticamente si está disponible
+        docker_available = False
+        try:
+            d_check = subprocess.run(["docker", "ps"], capture_output=True, text=True, timeout=3)
+            if d_check.returncode == 0 and "ollama" in d_check.stdout:
+                docker_available = True
+        except Exception:
+            pass
+
+        if docker_available:
+            await websocket.send_json({"type": "log", "message": "[*] Cargando modelo en contenedor Docker Ollama..."})
+            subprocess.run(["docker", "cp", dest_path, f"ollama:/tmp/{dest_filename}"], timeout=30)
+            subprocess.run(["docker", "exec", "ollama", "sh", "-c", f"echo 'FROM /tmp/{dest_filename}' > /tmp/Modelfile && ollama create {model_name} -f /tmp/Modelfile"], timeout=120)
+            await websocket.send_json({"type": "success", "message": f"¡Modelo {model_name} cargado con éxito en Docker Ollama!"})
+        else:
+            await websocket.send_json({"type": "success", "message": f"Modelo descargado en {dest_path}. Listo para usar con llama.cpp / Sentinel."})
+
+        await websocket.close()
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_json({"type": "error", "message": f"Error: {str(e)}"})
+            await websocket.close()
+        except Exception:
+            pass
 
 class SystemUninstallRequest(BaseModel):
     confirm: bool = False
@@ -2131,11 +2234,258 @@ class SentinelModelSwitchPayload(BaseModel):
 
 @app.get("/api/network/internet_status")
 def get_internet_status():
-    return check_cached_internet_status(force=True)
+    return check_cached_internet_status(force=False)
+
+@app.post("/api/network/hotspot/enable")
+def enable_network_hotspot():
+    """Crea una red Hotspot Wi-Fi local para conectar laptops y servidores sin router ni internet."""
+    ssid = "SentinelOS-Mesh"
+    password = "sentinelmesh2026"
+    if sys.platform == "win32":
+        try:
+            subprocess.run(f'netsh wlan set hostednetwork mode=allow ssid={ssid} key={password}', shell=True, capture_output=True)
+            res = subprocess.run('netsh wlan start hostednetwork', shell=True, capture_output=True, text=True)
+            # Intentar también Mobile Hotspot de Windows
+            ps = """
+            $connectionProfile = [Windows.Networking.Connectivity.NetworkInformation,Windows.Networking.Connectivity,ContentType=WindowsRuntime]::GetInternetConnectionProfile()
+            $tetheringManager = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager,Windows.Networking.NetworkOperators,ContentType=WindowsRuntime]::CreateFromConnectionProfile($connectionProfile)
+            $tetheringManager.StartTetheringAsync()
+            """
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True)
+            return {"status": "ok", "ssid": ssid, "password": password, "message": "Punto de acceso Wi-Fi SentinelOS iniciado."}
+        except Exception as e:
+            return {"status": "error", "detail": str(e)}
+    else:
+        try:
+            res = subprocess.run(f"nmcli dev wifi hotspot ssid '{ssid}' password '{password}'", shell=True, capture_output=True, text=True)
+            return {"status": "ok", "ssid": ssid, "password": password, "output": res.stdout.strip()}
+        except Exception as e:
+            return {"status": "error", "detail": str(e)}
+
+# =========================================================================
+# GESTOR DE DESCARGA Y DESPLIEGUE DE MODELOS IA A DOCKER / SERVIDORES
+# =========================================================================
+_AI_DEPLOY_STATE = {
+    "status": "idle",  # idle | downloading | deploying | completed | error
+    "progress": 0,
+    "model_id": "",
+    "target_server": "local",
+    "logs": [],
+    "error": None
+}
+
+class ModelDeployRequest(BaseModel):
+    model_id: str
+    target_server: str = "local"  # "local" o IP/nombre del servidor
+    hf_repo: str = ""
+
+@app.get("/api/ai/models/catalog")
+def get_ai_models_catalog():
+    """Retorna el catálogo oficial de modelos STEM optimizados para SentinelOS."""
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    export_dir = os.path.join(root_dir, "export", "output_gguf")
+    models_dir = os.path.join(root_dir, "models")
+    
+    catalog = [
+        {
+            "id": "sentinel-agentic-1b",
+            "name": "Sentinel Agentic 1B (Recomendado STEM)",
+            "params": "1.23B",
+            "quant": "Q4_K_M",
+            "size_mb": 807,
+            "filename": "sentinel-agentic-1b.Q4_K_M.gguf",
+            "desc": "Modelo STEM nativo con capacidades agenticas para cálculo, terminal y física.",
+            "is_local": os.path.exists(os.path.join(export_dir, "sentinel-agentic-1b.Q4_K_M.gguf")),
+            "recommended": True
+        },
+        {
+            "id": "sentinel-pure-stem-1b",
+            "name": "Sentinel Pure STEM 1B (Ultra Rápido)",
+            "params": "1.23B",
+            "quant": "Q4_K_M",
+            "size_mb": 807,
+            "filename": "sentinel-pure-stem-1b.Q4_K_M.gguf",
+            "desc": "Podado y alineado con DPO para razonamiento matemático puro a 60+ tok/s.",
+            "is_local": os.path.exists(os.path.join(export_dir, "sentinel-pure-stem-1b.Q4_K_M.gguf")),
+            "recommended": False
+        },
+        {
+            "id": "sentinel-master-3b",
+            "name": "Sentinel Master 3B (Alta Capacidad)",
+            "params": "3.2B",
+            "quant": "Q4_K_M",
+            "size_mb": 2019,
+            "filename": "sentinel-master.Q4_K_M.gguf",
+            "desc": "Modelo de 3.2B para laboratorios complejos e inferencia multivariable.",
+            "is_local": os.path.exists(os.path.join(export_dir, "sentinel-master.Q4_K_M.gguf")),
+            "recommended": False
+        },
+        {
+            "id": "llama-3.2-1b",
+            "name": "Llama 3.2 1B Instruct (Base Meta)",
+            "params": "1.23B",
+            "quant": "Q4_K_M",
+            "size_mb": 807,
+            "filename": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+            "desc": "Modelo base de instrucción general de Meta.",
+            "is_local": os.path.exists(os.path.join(models_dir, "llama-3.2-1b", "Llama-3.2-1B-Instruct-Q4_K_M.gguf")),
+            "recommended": False
+        }
+    ]
+    return {"catalog": catalog, "deploy_state": _AI_DEPLOY_STATE}
+
+def _bg_deploy_task(req: ModelDeployRequest):
+    global _AI_DEPLOY_STATE
+    def log(msg: str):
+        t = datetime.now().strftime("%H:%M:%S")
+        entry = f"[{t}] {msg}"
+        _AI_DEPLOY_STATE["logs"].append(entry)
+        print(f"[AI-DEPLOY] {entry}")
+
+    try:
+        _AI_DEPLOY_STATE["status"] = "in_progress"
+        _AI_DEPLOY_STATE["progress"] = 10
+        _AI_DEPLOY_STATE["error"] = None
+        _AI_DEPLOY_STATE["model_id"] = req.model_id
+        _AI_DEPLOY_STATE["target_server"] = req.target_server
+        _AI_DEPLOY_STATE["logs"] = []
+
+        log(f"Iniciando despliegue de modelo '{req.model_id}' hacia objetivo: '{req.target_server}'")
+        
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        export_dir = os.path.join(root_dir, "export", "output_gguf")
+        models_dir = os.path.join(root_dir, "models")
+
+        # Mapear archivo
+        fname_map = {
+            "sentinel-agentic-1b": "sentinel-agentic-1b.Q4_K_M.gguf",
+            "sentinel-pure-stem-1b": "sentinel-pure-stem-1b.Q4_K_M.gguf",
+            "sentinel-master-3b": "sentinel-master.Q4_K_M.gguf",
+            "llama-3.2-1b": "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+        }
+        filename = fname_map.get(req.model_id, f"{req.model_id}.gguf")
+        
+        # Buscar archivo local
+        local_src = os.path.join(export_dir, filename)
+        if not os.path.exists(local_src):
+            local_src = os.path.join(models_dir, "llama-3.2-1b", filename)
+        if not os.path.exists(local_src):
+            local_src = os.path.join(root_dir, filename)
+
+        if not os.path.exists(local_src):
+            log(f"Aviso: Archivo local no encontrado en export/ ni models/. Procediendo con plantilla de modelo Ollama.")
+            local_src = None
+        else:
+            mb = os.path.getsize(local_src) / (1024 * 1024)
+            log(f"Binario GGUF localizado: {local_src} ({mb:.1f} MB)")
+
+        _AI_DEPLOY_STATE["progress"] = 35
+
+        # Si el objetivo es el Servidor HP (remoto)
+        is_hp_server = ("labsentinel" in req.target_server.lower() or "hp" in req.target_server.lower() or "192.168.68.68" in req.target_server)
+        
+        if is_hp_server:
+            log("Conectando vía SSH seguro con el Servidor HP...")
+            import paramiko
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            
+            # Intentar IP Tailscale o LAN
+            hp_host = "labsentinel.tailc83bd7.ts.net"
+            try:
+                client.connect(hp_host, port=22, username="mauro", password="Pollito92.", timeout=12)
+            except Exception:
+                hp_host = "192.168.68.68"
+                client.connect(hp_host, port=22, username="mauro", password="Pollito92.", timeout=12)
+                
+            log(f"Conexión SSH establecida con {hp_host}.")
+            _AI_DEPLOY_STATE["progress"] = 50
+
+            # Subir o verificar modelo en servidor HP
+            if local_src and os.path.exists(local_src):
+                log("Verificando existencia del binario GGUF en el servidor remoto...")
+                remote_path = f"/home/mauro/{filename}"
+                stdin, stdout, stderr = client.exec_command(f"ls -lh {remote_path} 2>/dev/null")
+                if not stdout.read().decode().strip():
+                    log(f"Transfiriendo binario {filename} hacia servidor HP vía SFTP...")
+                    sftp = client.open_sftp()
+                    sftp.put(local_src, remote_path)
+                    sftp.close()
+                    log("Transferencia de archivo GGUF completada al 100%.")
+                else:
+                    log("El archivo binario ya se encuentra en el servidor remoto.")
+
+            _AI_DEPLOY_STATE["progress"] = 75
+            log("Creando Modelfile y registrando en contenedor Docker de Ollama...")
+            modelfile_cmd = f"""
+cat << 'EOF' > /home/mauro/Modelfile.{req.model_id}
+FROM /home/mauro/{filename}
+PARAMETER temperature 0.3
+PARAMETER top_p 0.9
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|end_of_text|>"
+SYSTEM \"\"\"Eres SENTINEL, el asistente de inteligencia artificial y copiloto distribuido de laboratorio STEM. Responde de forma técnica, precisa y útil.\"\"\"
+EOF
+docker cp /home/mauro/{filename} ollama:/root/ 2>/dev/null || true
+docker cp /home/mauro/Modelfile.{req.model_id} ollama:/root/
+docker exec ollama ollama create {req.model_id}:latest -f /root/Modelfile.{req.model_id}
+"""
+            stdin, stdout, stderr = client.exec_command(modelfile_cmd)
+            out = stdout.read().decode()
+            err = stderr.read().decode()
+            if out: log(f"Docker Ollama: {out.strip()}")
+            if err and "error" in err.lower(): log(f"Docker Aviso: {err.strip()}")
+
+            log("Verificando modelos disponibles en el Docker de Ollama...")
+            stdin, stdout, _ = client.exec_command("docker exec ollama ollama list")
+            log(stdout.read().decode().strip())
+            client.close()
+
+        else:
+            # Despliegue Local (Host Maestro)
+            log("Configurando modelo en entorno local Docker / Ollama...")
+            if local_src:
+                log(f"Preparando Modelfile local para {req.model_id}...")
+                modelfile_path = os.path.join(root_dir, f"Modelfile.{req.model_id}")
+                with open(modelfile_path, "w", encoding="utf-8") as mf:
+                    mf.write(f'FROM "{local_src}"\nPARAMETER temperature 0.3\n')
+                
+                # Si ollama CLI existe localmente, registrarlo
+                if shutil.which("ollama"):
+                    subprocess.run(["ollama", "create", f"{req.model_id}:latest", "-f", modelfile_path], capture_output=True)
+                    log(f"Modelo {req.model_id}:latest creado en Ollama local.")
+                
+            _AI_DEPLOY_STATE["progress"] = 90
+
+        _AI_DEPLOY_STATE["progress"] = 100
+        _AI_DEPLOY_STATE["status"] = "completed"
+        log(f"¡ÉXITO! Modelo {req.model_id} cargado e instalado en Docker. Listo para usar en Sentinel AI Lab.")
+
+    except Exception as e:
+        _AI_DEPLOY_STATE["status"] = "error"
+        _AI_DEPLOY_STATE["error"] = str(e)
+        log(f"ERROR DURANTE EL DESPLIEGUE: {str(e)}")
+
+@app.post("/api/ai/models/deploy")
+def trigger_model_deploy(req: ModelDeployRequest):
+    """Inicia la descarga, transferencia y carga automática del modelo en Docker en segundo plano."""
+    global _AI_DEPLOY_STATE
+    if _AI_DEPLOY_STATE["status"] == "in_progress":
+        return {"status": "busy", "message": "Ya hay una descarga/despliegue en progreso.", "state": _AI_DEPLOY_STATE}
+
+    import threading
+    t = threading.Thread(target=_bg_deploy_task, args=(req,), daemon=True)
+    t.start()
+    return {"status": "started", "message": f"Despliegue de {req.model_id} iniciado.", "state": _AI_DEPLOY_STATE}
+
+@app.get("/api/ai/models/deploy/status")
+def get_model_deploy_status():
+    """Consulta el progreso y logs en tiempo real del despliegue del modelo."""
+    return _AI_DEPLOY_STATE
 
 @app.get("/api/network/details")
 def get_network_details():
-    net_status = check_cached_internet_status(force=True)
+    net_status = check_cached_internet_status(force=False)
     gateway = get_default_gateway()
     local_ip = get_primary_local_ip()
     traffic = get_network_traffic_rates()

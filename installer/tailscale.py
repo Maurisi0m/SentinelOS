@@ -212,12 +212,58 @@ def login_tailscale_with_qr_and_browser(ts_bin: str, lang="es") -> dict:
     auth_url_found = None
     browser_opened = False
 
+    def _open_browser_safe(url: str):
+        if sys.platform == "win32":
+            try:
+                os.startfile(url)
+                return True
+            except Exception:
+                pass
+            try:
+                subprocess.Popen(["powershell", "-NoProfile", "-Command", f'Start-Process "{url}"'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except Exception:
+                pass
+        elif sys.platform == "darwin":
+            try:
+                subprocess.Popen(["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except Exception:
+                pass
+        else:
+            # Linux: intentar abrir en entorno gráfico del usuario
+            sudo_user = os.environ.get("SUDO_USER")
+            for opener in ["xdg-open", "gio open", "sensible-browser", "x-www-browser"]:
+                bin_name = opener.split()[0]
+                if shutil.which(bin_name):
+                    try:
+                        if sudo_user and sudo_user != "root":
+                            subprocess.Popen(["su", sudo_user, "-c", f"{opener} '{url}'"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        else:
+                            subprocess.Popen(opener.split() + [url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        return True
+                    except Exception:
+                        pass
+        try:
+            return webbrowser.open(url)
+        except Exception:
+            return False
+
     try:
+        if sys.platform == "win32":
+            try:
+                if hasattr(sys.stdout, "reconfigure"):
+                    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
         proc = subprocess.Popen(
             [ts_bin, "up", "--qr", "--reset", "--accept-routes"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1
         )
 
@@ -231,27 +277,33 @@ def login_tailscale_with_qr_and_browser(ts_bin: str, lang="es") -> dict:
             url_match = re.search(r'(https://login\.tailscale\.com/a/[a-zA-Z0-9]+)', line)
             if url_match and not auth_url_found:
                 auth_url_found = url_match.group(1)
+                clickable_link = f"\033]8;;{auth_url_found}\033\\{auth_url_found}\033]8;;\033\\"
                 print(f"\n{Colors.BOLD}{Colors.YELLOW}" + "╔" + "═" * 72 + "╗")
                 print(f"║  🔗 {Colors.RESET}{Colors.BOLD}ENLACE DIRECTO DE AUTENTICACIÓN / REGISTRO DE CUENTA:{Colors.YELLOW}           ║")
-                print(f"║     {Colors.CYAN}{auth_url_found}{Colors.YELLOW}  ║")
+                print(f"║     {Colors.CYAN}{clickable_link}{Colors.YELLOW}  ║")
                 print(f"║                                                                        ║")
                 print(f"║  👉 {Colors.GREEN}Abriendo enlace automáticamente en tu navegador web...{Colors.YELLOW}             ║")
                 print("╚" + "═" * 72 + "╝" + f"{Colors.RESET}\n")
 
                 if not browser_opened:
-                    try:
-                        webbrowser.open(auth_url_found)
-                        browser_opened = True
-                    except Exception:
-                        pass
+                    browser_opened = _open_browser_safe(auth_url_found)
 
             # Si empieza el bloque visual del QR, notificar
-            if ("██" in line or "▄" in line) and not qr_started:
+            if ("██" in line or "▄" in line or "▀" in line) and not qr_started:
                 qr_started = True
                 print(f"{Colors.BOLD}📱 O escanea este código QR con la cámara de tu celular:{Colors.RESET}\n")
 
-            # Imprimir la línea en la terminal
-            print(line, end="")
+            # Imprimir la línea con protección contra fallos de codificación en terminal
+            try:
+                print(line, end="")
+                sys.stdout.flush()
+            except Exception:
+                try:
+                    safe = line.encode(sys.stdout.encoding or "ascii", errors="replace").decode(sys.stdout.encoding or "ascii")
+                    print(safe, end="")
+                    sys.stdout.flush()
+                except Exception:
+                    pass
 
         proc.wait(timeout=180)
 

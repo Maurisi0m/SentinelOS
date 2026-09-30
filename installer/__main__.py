@@ -28,6 +28,7 @@ from .firewall import configure_firewall_rule, remove_firewall_rule, check_firew
 from .desktop_shortcut import configure_desktop_shortcuts, remove_desktop_shortcuts
 from .port_guard import check_and_resolve_port
 from .uninstaller import run_full_uninstall
+from .cli import install_cli_to_path
 import webbrowser
 import subprocess
 import json
@@ -504,6 +505,13 @@ def main():
     # Configurar acceso directo en Escritorio y Menú Inicio para el Cockpit
     if node_role != "server_headless":
         configure_desktop_shortcuts(ROOT_DIR, os_info, lang)
+    
+    # Instalar comandos 'sentinel' en el PATH del sistema
+    try:
+        install_cli_to_path(ROOT_DIR)
+        print_success("Comandos de terminal 'sentinel' (active, stop, status, logs) instalados en el PATH.")
+    except Exception as e:
+        print_warning(f"Aviso instalación CLI en PATH: {e}")
 
     lan_ip = get_lan_ip()
     local_display_url = f"http://{lan_ip}:8001"
@@ -568,9 +576,11 @@ def main():
         active_skills_list = [s.id for s in configured_skills] if configured_skills else ["Core STEM"]
         print(f"  {Colors.BOLD}🧩  Módulos Desplegados:{Colors.RESET}        {', '.join(active_skills_list)}")
         print(f"  {Colors.BOLD}🚀  Modo Activo:{Colors.RESET}                {node_role.upper()}")
+        print(f"  {Colors.BOLD}⚡  Control en Terminal:{Colors.RESET}        'sentinel active' | 'sentinel stop' | 'sentinel status'")
         print(f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74 + f"{Colors.RESET}\n")
 
-        if os_info.get("system") == "Windows" or os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        open_web = input("¿Deseas abrir el panel en tu navegador predeterminado ahora? (S/n): " if lang == "es" else "Open cockpit in browser now? (Y/n): ").strip().lower()
+        if open_web not in ['n', 'no']:
             try:
                 print_info("Abriendo panel de control en tu navegador predeterminado..." if lang == "es" else "Opening cockpit in default browser...")
                 webbrowser.open("http://127.0.0.1:8001")
