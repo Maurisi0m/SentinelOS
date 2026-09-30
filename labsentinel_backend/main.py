@@ -836,10 +836,10 @@ def collect_data() -> dict:
     # Cron Jobs
     cron_jobs = []
     try:
-        out = command("crontab", "-l")
+        current_user = os.environ.get("USER") or os.environ.get("USERNAME") or "user"
         for line in out.splitlines():
             if line and not line.startswith("#"):
-                cron_jobs.append({"user": "mauro", "job": line})
+                cron_jobs.append({"user": current_user, "job": line})
         if os.path.exists("/etc/crontab"):
             with open("/etc/crontab") as f:
                 for line in f:
@@ -1788,11 +1788,13 @@ async def websocket_sandbox_install(websocket: WebSocket, tool: str):
     env["TERM"] = "xterm-256color"
     
     # We will use a bash script to handle the git clone and setup
+    user_home = os.path.expanduser("~")
+    sandbox_tools_dir = os.path.join(user_home, "lab-sandbox", "tools")
     if tool == "theharvester":
-        script = """
+        script = f"""
         echo "Iniciando instalación de theHarvester en Sandbox..."
-        mkdir -p /home/mauro/lab-sandbox/tools
-        cd /home/mauro/lab-sandbox/tools
+        mkdir -p "{sandbox_tools_dir}"
+        cd "{sandbox_tools_dir}"
         if [ -d "theHarvester" ]; then
             echo "Directorio theHarvester ya existe. Actualizando..."
             cd theHarvester && git pull
@@ -1836,13 +1838,14 @@ async def websocket_sandbox_terminal(websocket: WebSocket, tool: str):
     env["COLORTERM"] = "truecolor"
     
     if tool == "theharvester":
+        th_dir = os.path.join(os.path.expanduser("~"), "lab-sandbox", "tools", "theHarvester")
         # Launch an interactive bash session with the python virtual environment pre-activated
         script = f"""
-        cd /home/mauro/lab-sandbox/tools/theHarvester
+        cd "{th_dir}"
         if [ -f "venv/bin/activate" ]; then
             source venv/bin/activate
         fi
-        echo -e "\\e[1;32m[LabSentinel Sandbox]\\e[0m Entorno de \\e[1;34mtheHarvester\\e[0m cargado."
+        echo -e "\\e[1;32m[Sentinel Sandbox]\\e[0m Entorno de \\e[1;34mtheHarvester\\e[0m cargado."
         echo -e "Ejecuta: \\e[1;33mpython -m theHarvester -h\\e[0m para ver las opciones."
         echo -e "Repositorio oficial: \\e[4;36mhttps://github.com/laramies/theHarvester\\e[0m"
         echo ""
@@ -1902,8 +1905,9 @@ def get_sandbox_tools():
     ]
     
     # Check installation status
+    tools_base = os.path.join(os.path.expanduser("~"), "lab-sandbox", "tools")
     for t in tools:
-        t["installed"] = os.path.exists(f"/home/mauro/lab-sandbox/tools/{t['id']}") or os.path.exists(f"/home/mauro/lab-sandbox/tools/theHarvester")
+        t["installed"] = os.path.exists(os.path.join(tools_base, t['id'])) or os.path.exists(os.path.join(tools_base, "theHarvester"))
         
     return {"results": tools}
 
@@ -1999,7 +2003,8 @@ def alexa_status():
     
     k_state = "encendido e imprimiendo" if klipper_status == "active" else "apagado o en espera"
     
-    speech_text = f"Hola Mauro, LabSentinel está usando un aproximado de {int(cpu)} por ciento de CPU y {int(mem)} por ciento de RAM. El servicio de Klipper de la impresora 3D está {k_state}, y en general todo se ve bien."
+    username = os.environ.get("USER") or os.environ.get("USERNAME") or "Operador"
+    speech_text = f"Hola {username.capitalize()}, SentinelOS está usando un aproximado de {int(cpu)} por ciento de CPU y {int(mem)} por ciento de RAM. El servicio de Klipper de la impresora 3D está {k_state}, y en general todo se ve bien."
     
     return {
         "version": "1.0",
@@ -2219,9 +2224,9 @@ async def switch_model(payload: SentinelModelSwitchPayload):
             )
             with open("/tmp/sentinel.service.tmp", "w") as tmp_f:
                 tmp_f.write(new_s_content)
-            os.system("echo 'Pollito92.' | sudo -S cp /tmp/sentinel.service.tmp /etc/systemd/system/sentinel.service")
-            os.system("echo 'Pollito92.' | sudo -S systemctl daemon-reload")
-            os.system("echo 'Pollito92.' | sudo -S systemctl restart sentinel.service")
+            subprocess.run(["sudo", "-n", "cp", "/tmp/sentinel.service.tmp", "/etc/systemd/system/sentinel.service"], capture_output=True)
+            subprocess.run(["sudo", "-n", "systemctl", "daemon-reload"], capture_output=True)
+            subprocess.run(["sudo", "-n", "systemctl", "restart", "sentinel.service"], capture_output=True)
             
         sentinel_service.set_active_model_id(target_id)
         notify(f"Conmutado exitosamente a {model_meta['name']}", "success")
@@ -2233,7 +2238,9 @@ async def switch_model(payload: SentinelModelSwitchPayload):
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 dist_dir = os.path.join(BASE_DIR, "dist")
 if not os.path.isdir(dist_dir):
-    dist_dir = "/home/mauro/labsentinel-web/frontend/dist"
+    frontend_candidate = os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "dist"))
+    if os.path.isdir(frontend_candidate):
+        dist_dir = frontend_candidate
 
 if os.path.isdir(dist_dir):
     app.mount("/", StaticFiles(directory=dist_dir, html=True), name="static")

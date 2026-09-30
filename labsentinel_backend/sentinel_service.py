@@ -147,7 +147,7 @@ NEMOTRON_TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "check_klipper_status",
-            "description": "Consulta el estado real del servicio Klipper (systemctl) y el repositorio Git (/home/mauro/klipper) en el servidor Ubuntu",
+            "description": "Consulta el estado real del servicio Klipper (systemctl) y el repositorio Git local en el servidor",
             "parameters": {"type": "object", "properties": {}}
         }
     },
@@ -182,12 +182,21 @@ def run_server_tool(name: str, args: dict) -> dict:
             svc = subprocess.check_output(["systemctl", "is-active", "klipper"], stderr=subprocess.STDOUT).decode().strip()
         except Exception:
             svc = "inactive"
+        
+        klipper_candidates = [
+            os.path.expanduser("~/klipper"),
+            "/home/pi/klipper",
+            "/opt/klipper",
+            "/home/mauro/klipper"
+        ]
+        klipper_path = next((p for p in klipper_candidates if os.path.isdir(p)), os.path.expanduser("~/klipper"))
+
         try:
-            git_stat = subprocess.check_output(["git", "-C", "/home/mauro/klipper", "status", "-uno"], stderr=subprocess.STDOUT).decode().strip()
-            git_rev = subprocess.check_output(["git", "-C", "/home/mauro/klipper", "rev-parse", "--short", "HEAD"], stderr=subprocess.STDOUT).decode().strip()
+            git_stat = subprocess.check_output(["git", "-C", klipper_path, "status", "-uno"], stderr=subprocess.STDOUT).decode().strip()
+            git_rev = subprocess.check_output(["git", "-C", klipper_path, "rev-parse", "--short", "HEAD"], stderr=subprocess.STDOUT).decode().strip()
             # Fetch updates
-            subprocess.run(["git", "-C", "/home/mauro/klipper", "fetch", "origin"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-            git_behind = subprocess.check_output(["git", "-C", "/home/mauro/klipper", "status", "-uno"], stderr=subprocess.STDOUT).decode().strip()
+            subprocess.run(["git", "-C", klipper_path, "fetch", "origin"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+            git_behind = subprocess.check_output(["git", "-C", klipper_path, "status", "-uno"], stderr=subprocess.STDOUT).decode().strip()
         except Exception as e:
             git_rev = "unknown"
             git_behind = str(e)
@@ -195,7 +204,7 @@ def run_server_tool(name: str, args: dict) -> dict:
             "service": svc,
             "current_commit": git_rev,
             "git_status": git_behind,
-            "klipper_path": "/home/mauro/klipper"
+            "klipper_path": klipper_path
         }
     elif name == "execute_system_command":
         cmd = args.get("command", "").strip()

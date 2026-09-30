@@ -1,7 +1,7 @@
 """Vault Manager - Obsidian-compatible memory system for SENTINEL.
 
 Reads and parses Markdown notes, frontmatter metadata, and [[wikilinks]]
-from the Obsidian vault directory (/home/mauro/sentinel-vault).
+from the Obsidian vault directory (~/sentinel-vault or SENTINEL_VAULT_DIR).
 """
 
 from __future__ import annotations
