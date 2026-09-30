@@ -33,7 +33,8 @@ try:
         record_heartbeat,
         get_mesh_nodes,
         smart_proxy_fetch,
-        get_self_network_candidates
+        get_self_network_candidates,
+        scan_lan_subnet
     )
 except ImportError:
     from .mesh_engine import (
@@ -41,7 +42,8 @@ except ImportError:
         record_heartbeat,
         get_mesh_nodes,
         smart_proxy_fetch,
-        get_self_network_candidates
+        get_self_network_candidates,
+        scan_lan_subnet
     )
 try:
     import winpty
@@ -1001,6 +1003,13 @@ async def mesh_heartbeat(request: Request):
 def mesh_nodes():
     """Retorna todos los nodos descubiertos en la malla y sus rutas alternativas."""
     return {"nodes": get_mesh_nodes(), "candidates": get_self_network_candidates(port=8001)}
+
+@app.post("/api/mesh/scan")
+@app.post("/mesh/scan")
+def mesh_scan():
+    """Ejecuta un escaneo rápido en la subred local /24 para descubrir nodos SentinelOS."""
+    found = scan_lan_subnet(port=8001)
+    return {"status": "ok", "scanned": len(found), "found": found, "nodes": get_mesh_nodes()}
 
 @app.post("/api/remote/proxy")
 async def remote_proxy_post(request: Request, target_url: str):

@@ -265,29 +265,49 @@ StartupNotify=true
     return False
 
 def remove_desktop_shortcuts(root_dir: str, os_info: dict):
-    """Remueve los accesos directos al desinstalar."""
+    """Remueve los accesos directos al desinstalar desde todas las rutas posibles del sistema."""
     system = os_info.get("system", "Linux")
     if system == "Windows":
-        for p in [get_desktop_dir(), get_start_menu_dir()]:
-            if p:
-                lnk = os.path.join(p, "SentinelOS Cockpit.lnk")
-                if os.path.exists(lnk):
-                    try:
-                        os.remove(lnk)
-                    except Exception:
-                        pass
-        launcher = os.path.join(root_dir, "launch_cockpit.pyw")
-        if os.path.exists(launcher):
-            try:
-                os.remove(launcher)
-            except Exception:
-                pass
+        candidates = set()
+        candidates.add(get_desktop_dir())
+        candidates.add(get_start_menu_dir())
+        
+        u_prof = os.environ.get("USERPROFILE", "")
+        if u_prof:
+            for sub in ["Desktop", "Escritorio", r"OneDrive\Desktop", r"OneDrive\Escritorio"]:
+                p = os.path.join(u_prof, sub)
+                if os.path.exists(p):
+                    candidates.add(p)
+        pub = os.environ.get("PUBLIC", r"C:\Users\Public")
+        for sub in ["Desktop", "Escritorio"]:
+            p = os.path.join(pub, sub)
+            if os.path.exists(p):
+                candidates.add(p)
+
+        for p in candidates:
+            if p and os.path.exists(p):
+                for name in ["SentinelOS Cockpit.lnk", "SentinelOS.lnk", "Sentinel.lnk"]:
+                    lnk = os.path.join(p, name)
+                    if os.path.exists(lnk):
+                        try:
+                            os.remove(lnk)
+                        except Exception:
+                            pass
+        
+        for f in ["launch_cockpit.pyw", "start_sentinel_bg.bat", "Sentinel.ico", "sentinel_backend.log"]:
+            target = os.path.join(root_dir, f)
+            if os.path.exists(target):
+                try:
+                    os.remove(target)
+                except Exception:
+                    pass
     elif system == "Linux":
-        for p in [get_desktop_dir(), get_start_menu_dir()]:
-            if p:
-                f = os.path.join(p, "sentinelos.desktop")
-                if os.path.exists(f):
-                    try:
-                        os.remove(f)
-                    except Exception:
-                        pass
+        for p in [get_desktop_dir(), get_start_menu_dir(), os.path.expanduser("~/.local/share/applications")]:
+            if p and os.path.exists(p):
+                for name in ["SentinelOS.desktop", "sentinelos.desktop"]:
+                    f = os.path.join(p, name)
+                    if os.path.exists(f):
+                        try:
+                            os.remove(f)
+                        except Exception:
+                            pass

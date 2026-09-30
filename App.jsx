@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers, Plus, CheckCircle2, AlertCircle, AlertTriangle, Cable, Filter, Sliders, Globe, Radio, Key, Copy, Search, Wifi, WifiOff, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers, Plus, CheckCircle2, AlertCircle, AlertTriangle, Cable, Filter, Sliders, Globe, Radio, Key, Copy, Search, Wifi, WifiOff, ArrowUpRight, ArrowDownLeft, ShieldCheck } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Terminal as TerminalXTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -39,6 +39,8 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [showSentinelIntro, setShowSentinelIntro] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [scanningLan, setScanningLan] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isGlobalFullscreen, setIsGlobalFullscreen] = useState(false);
   const [networkSubTab, setNetworkSubTab] = useState('status');
@@ -522,16 +524,31 @@ function App() {
 
   useEffect(() => {
     try {
-      const completed = localStorage.getItem('sentinel_onboarding_completed');
-      if (!completed) {
+      const welcomeSeen = localStorage.getItem('sentinel_welcome_seen_v2');
+      if (!welcomeSeen) {
         const timer = setTimeout(() => {
-          setTourActive(true);
-          setTourStep(0);
-        }, 1200);
+          setShowWelcomeModal(true);
+        }, 800);
         return () => clearTimeout(timer);
       }
     } catch (e) {}
   }, []);
+
+  const handleScanLan = async () => {
+    setScanningLan(true);
+    try {
+      const res = await fetch(`${API_URL}/mesh/scan`, { method: 'POST' });
+      if (res.ok) {
+        const d = await res.json();
+        if (d.nodes) setMeshDiscoveredNodes(d.nodes);
+        addNotification(`Escaneo LAN completado. ${d.scanned || 0} nodos encontrados en la red.`, 'info');
+      }
+    } catch (e) {
+      addNotification('Error al escanear la red local LAN.', 'error');
+    } finally {
+      setScanningLan(false);
+    }
+  };
 
   useEffect(() => {
     if (!tourActive) return;
@@ -4773,72 +4790,101 @@ function App() {
         </div>
 
         {/* Nodos Detectados en Malla / Tailscale */}
-        {meshDiscoveredNodes.filter(n => !connectedServers.some(s => s.url?.includes(n.node_name) || (n.candidates && n.candidates.some(c => s.url?.includes(c.replace(/https?:\/\//, '').replace(/:.*$/, '')))))).length > 0 && (
-          <div style={{
-            background: 'rgba(16, 185, 129, 0.05)',
-            border: '1px solid rgba(16, 185, 129, 0.25)',
-            borderRadius: '10px',
-            padding: '0.85rem 1rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.6rem'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Activity size={15} /> Nodos Detectados en la Red / Malla (1-Clic para Conectar)
+        {(() => {
+          const unconnectedMeshNodes = meshDiscoveredNodes.filter(n => !connectedServers.some(s => s.url?.includes(n.node_name) || (n.candidates && n.candidates.some(c => s.url?.includes(c.replace(/https?:\/\//, '').replace(/:.*$/, ''))))));
+          return (
+            <div style={{
+              background: 'rgba(16, 185, 129, 0.05)',
+              border: '1px solid rgba(16, 185, 129, 0.25)',
+              borderRadius: '10px',
+              padding: '0.85rem 1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.6rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Activity size={15} /> Nodos Detectados en la Red / Malla (1-Clic para Conectar)
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={scanningLan}
+                    onClick={handleScanLan}
+                    style={{
+                      fontSize: '0.72rem',
+                      padding: '0.25rem 0.55rem',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      borderColor: 'rgba(52, 211, 153, 0.4)',
+                      color: '#34d399',
+                      background: 'rgba(52, 211, 153, 0.1)'
+                    }}
+                    title="Escanear la subred local (Wi-Fi/Ethernet) en busca de otros equipos con SentinelOS"
+                  >
+                    <RefreshCw size={12} className={scanningLan ? 'spin' : ''} />
+                    {scanningLan ? 'Escaneando LAN...' : 'Escanear Red LAN'}
+                  </button>
+                  <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>UDP Beacon + Subred</span>
+                </div>
               </div>
-              <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Descubrimiento Automático</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-              {meshDiscoveredNodes
-                .filter(n => !connectedServers.some(s => s.url?.includes(n.node_name) || (n.candidates && n.candidates.some(c => s.url?.includes(c.replace(/https?:\/\//, '').replace(/:.*$/, ''))))))
-                .map((node, idx) => (
-                  <div key={idx} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '0.5rem 0.75rem',
-                    background: 'rgba(0, 0, 0, 0.35)',
-                    border: '1px solid rgba(16, 185, 129, 0.2)',
-                    borderRadius: '6px'
-                  }}>
-                    <div>
-                      <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f8fafc' }}>
-                        {node.node_name} <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>({node.platform || 'linux'})</span>
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: '#64748b', fontFamily: 'monospace' }}>
-                        {node.candidates?.[0] || 'http://' + node.node_name + ':8001'}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => {
-                        const targetUrl = node.candidates?.[0] || `http://${node.node_name}:8001`;
-                        const newId = `srv-${Date.now()}`;
-                        const newEntry = {
-                          id: newId,
-                          name: node.node_name,
-                          url: targetUrl,
-                          token: '',
-                          isLocal: false,
-                          status: 'online',
-                          candidates: node.candidates || []
-                        };
-                        setConnectedServers(prev => [...prev, newEntry]);
-                        setSelectedServers(prev => [...prev, newId]);
-                        setSelectedLogServers(prev => [...prev, newId]);
-                        addNotification(`Nodo ${node.node_name} vinculado a la malla con éxito.`, 'success');
-                      }}
-                      style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', background: '#059669', borderColor: '#10b981' }}
-                    >
-                      + Conectar a Malla
-                    </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                {unconnectedMeshNodes.length === 0 ? (
+                  <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontStyle: 'italic', padding: '0.4rem 0.2rem' }}>
+                    {scanningLan ? 'Buscando servidores activos en la subred local...' : 'No se han detectado otros nodos aún. Si instalaste SentinelOS en otra PC de la red, presiona "Escanear Red LAN" o conéctala directamente por IP abajo.'}
                   </div>
-                ))}
+                ) : (
+                  unconnectedMeshNodes.map((node, idx) => (
+                    <div key={idx} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.5rem 0.75rem',
+                      background: 'rgba(0, 0, 0, 0.35)',
+                      border: '1px solid rgba(16, 185, 129, 0.2)',
+                      borderRadius: '6px'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f8fafc' }}>
+                          {node.node_name} <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>({node.platform || 'linux'})</span>
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b', fontFamily: 'monospace' }}>
+                          {node.candidates?.[0] || 'http://' + node.node_name + ':8001'}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => {
+                          const targetUrl = node.candidates?.[0] || `http://${node.node_name}:8001`;
+                          const newId = `srv-${Date.now()}`;
+                          const newEntry = {
+                            id: newId,
+                            name: node.node_name,
+                            url: targetUrl,
+                            token: '',
+                            isLocal: false,
+                            status: 'online',
+                            candidates: node.candidates || []
+                          };
+                          setConnectedServers(prev => [...prev, newEntry]);
+                          setSelectedServers(prev => [...prev, newId]);
+                          setSelectedLogServers(prev => [...prev, newId]);
+                          addNotification(`Nodo ${node.node_name} vinculado a la malla con éxito.`, 'success');
+                        }}
+                        style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', background: '#059669', borderColor: '#10b981' }}
+                      >
+                        + Conectar a Malla
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Formulario para agregar nuevo servidor */}
         <form onSubmit={handleAddServer} style={{ background: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -4921,6 +4967,143 @@ function App() {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+
+  const renderWelcomeModal = () => (
+    <div className="server-modal-backdrop" onClick={() => setShowWelcomeModal(false)}>
+      <div 
+        className="server-modal-box" 
+        onClick={e => e.stopPropagation()} 
+        style={{ 
+          maxWidth: '780px', 
+          border: '1px solid rgba(59, 130, 246, 0.4)', 
+          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7), 0 0 40px rgba(59, 130, 246, 0.15)',
+          background: 'linear-gradient(145deg, #0d121f, #090c14)'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+            <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'linear-gradient(135deg, #2563eb, #10b981)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 15px rgba(37, 99, 235, 0.4)' }}>
+              <ShieldCheck size={22} color="#ffffff" />
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#f8fafc', fontWeight: 700 }}>Bienvenido a SentinelOS Cockpit</h3>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8' }}>Tu Centro de Comando Unificado para Monitoreo de Servidores, Redes e Infraestructura</p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              try { localStorage.setItem('sentinel_welcome_seen_v2', 'true'); } catch (e) {}
+              setShowWelcomeModal(false);
+            }}
+            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '6px' }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Resumen del nodo actual */}
+        <div style={{
+          marginTop: '1.1rem',
+          padding: '0.9rem 1.1rem',
+          borderRadius: '10px',
+          background: 'rgba(59, 130, 246, 0.06)',
+          border: '1px solid rgba(59, 130, 246, 0.2)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '0.8rem'
+        }}>
+          <div>
+            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: '#60a5fa', fontWeight: 700, letterSpacing: '0.05em' }}>
+              Nodo Conectado Actualmente (Host Maestro)
+            </div>
+            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc', marginTop: '2px' }}>
+              {data?.system?.hostname || 'Sentinel Host'} <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 400 }}>({data?.system?.os || 'Sistema Operativo'})</span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'monospace' }}>
+              IP: {data?.network?.local_ip || '127.0.0.1'} | Puerto: 8001 | Firewall: Abierto
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '0.35rem 0.75rem', borderRadius: '20px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#34d399', fontWeight: 600 }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }}></span> En Línea
+            </span>
+          </div>
+        </div>
+
+        {/* 4 Pilares de Monitoreo */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', marginTop: '1.1rem' }}>
+          <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: '8px', padding: '0.9rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#60a5fa', fontWeight: 600, fontSize: '0.88rem' }}>
+              <Cpu size={16} /> Telemetría Hardware
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '0.4rem', lineHeight: '1.4' }}>
+              Monitoreo en tiempo real de CPU por núcleo, RAM, Discos NVMe/HDD, Sensores de Temperatura y Procesos de alto consumo.
+            </div>
+          </div>
+
+          <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: '8px', padding: '0.9rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#34d399', fontWeight: 600, fontSize: '0.88rem' }}>
+              <Network size={16} /> Topología de Red LAN
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '0.4rem', lineHeight: '1.4' }}>
+              Mapeo interactivo de Gateways, Malla Tailscale, Impresoras de red, Contenedores Docker y Servidores vinculados.
+            </div>
+          </div>
+
+          <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: '8px', padding: '0.9rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24', fontWeight: 600, fontSize: '0.88rem' }}>
+              <Terminal size={16} /> Logs Multi-Ventana
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '0.4rem', lineHeight: '1.4' }}>
+              Consolas de terminal independientes por servidor con pausa en vivo, búsqueda de texto, copia a portapapeles y pestañas.
+            </div>
+          </div>
+
+          <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: '8px', padding: '0.9rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#a78bfa', fontWeight: 600, fontSize: '0.88rem' }}>
+              <Server size={16} /> Malla Multi-Servidor
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '0.4rem', lineHeight: '1.4' }}>
+              Autodescubrimiento en la LAN vía UDP, compatibilidad cruzada Windows/Linux y acceso directo sin dependencias manuales.
+            </div>
+          </div>
+        </div>
+
+        {/* Acciones principales */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.4rem', paddingTop: '1rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', flexWrap: 'wrap', gap: '0.8rem' }}>
+          <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+            Puedes volver a ver esta guía o el recorrido en cualquier momento con el botón <strong>"Guía & Tour"</strong> en la barra superior.
+          </div>
+          <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                try { localStorage.setItem('sentinel_welcome_seen_v2', 'true'); } catch (e) {}
+                setShowWelcomeModal(false);
+              }}
+              style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+            >
+              Entrar al Cockpit
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                try { localStorage.setItem('sentinel_welcome_seen_v2', 'true'); } catch (e) {}
+                setShowWelcomeModal(false);
+                setTourStep(0);
+                setTourActive(true);
+              }}
+              style={{ fontSize: '0.85rem', padding: '0.5rem 1.2rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Compass size={15} /> Iniciar Recorrido Guiado
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

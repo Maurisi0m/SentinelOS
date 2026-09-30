@@ -27,6 +27,7 @@ from .node_token import get_or_create_node_auth
 from .firewall import configure_firewall_rule, remove_firewall_rule, check_firewall_rule
 from .desktop_shortcut import configure_desktop_shortcuts, remove_desktop_shortcuts
 from .port_guard import check_and_resolve_port
+from .uninstaller import run_full_uninstall
 import webbrowser
 import subprocess
 import json
@@ -185,48 +186,12 @@ def get_lan_ip() -> str:
         return "127.0.0.1"
 
 def uninstall_system_cli(os_info: dict, lang="es"):
-    print(f"\n{Colors.BOLD}{Colors.RED}╭── DESINSTALACIÓN DE SENTINEL OS ──────────────────────────────────╮{Colors.RESET}")
-    print(f"  {Colors.YELLOW}Deteniendo servicios y eliminando inicio automático...{Colors.RESET}")
-    disable_autostart(os_info, ROOT_DIR)
-    
-    # Detener procesos en ejecución
-    if os_info["system"] == "Linux":
-        subprocess.run("systemctl stop labsentinel.service sentinel.service sentinel-orchestrator.service 2>/dev/null || true", shell=True)
-        subprocess.run("systemctl disable labsentinel.service sentinel.service sentinel-orchestrator.service 2>/dev/null || true", shell=True)
-        subprocess.run("rm -f /etc/systemd/system/labsentinel.service /etc/systemd/system/sentinel.service /etc/systemd/system/sentinel-orchestrator.service", shell=True)
-        subprocess.run("rm -rf /etc/systemd/system/sentinel*.service.d 2>/dev/null || true", shell=True)
-        subprocess.run("systemctl daemon-reload 2>/dev/null || true", shell=True)
-    else:
-        # Windows: Terminar procesos uvicorn y pythonw de forma silenciosa y segura
-        subprocess.run(["taskkill", "/F", "/IM", "uvicorn.exe"], capture_output=True)
-        subprocess.run(["taskkill", "/F", "/IM", "pythonw.exe"], capture_output=True)
-        start_bat = os.path.join(ROOT_DIR, "start_sentinel_bg.bat")
-        if os.path.exists(start_bat):
-            try:
-                os.remove(start_bat)
-            except Exception:
-                pass
-        launcher_pyw = os.path.join(ROOT_DIR, "launch_cockpit.pyw")
-        if os.path.exists(launcher_pyw):
-            try:
-                os.remove(launcher_pyw)
-            except Exception:
-                pass
-
-    # Limpiar credenciales y archivo de autenticación del nodo
-    auth_file = os.path.join(ROOT_DIR, "config", "node_auth.json")
-    if os.path.exists(auth_file):
-        try:
-            os.remove(auth_file)
-        except Exception:
-            pass
-    
-    print_info("Removiendo reglas de cortafuegos y accesos directos..." if lang == "es" else "Removing firewall rules and desktop shortcuts...")
-    remove_firewall_rule(os_info, 8001, lang)
-    remove_desktop_shortcuts(ROOT_DIR, os_info)
-    
-    print_success("SentinelOS ha sido desinstalado del sistema exitosamente." if lang == "es" else "SentinelOS has been successfully uninstalled.")
-    print(f"{Colors.BOLD}{Colors.RED}╰──────────────────────────────────────────────────────────────────╯{Colors.RESET}\n")
+    print(f"\n{Colors.BOLD}{Colors.YELLOW}¿Deseas eliminar también el entorno virtual (.venv) y configuraciones locales?{Colors.RESET}")
+    print("  [s] Sí - Limpieza total absoluta")
+    print("  [N] No - Conservar código y entorno virtual (Por defecto)")
+    choice = input("  Selecciona una opción (s/N): ").strip().lower()
+    purge = choice == "s"
+    run_full_uninstall(os_info, ROOT_DIR, lang=lang, purge_venv=purge)
 
 def _close_terminal_smoothly(os_info: dict, lang="es"):
     is_desktop = os_info.get("system") == "Windows" or bool(os.environ.get("DISPLAY")) or bool(os.environ.get("WAYLAND_DISPLAY"))
