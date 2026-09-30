@@ -31,7 +31,11 @@ def check_firewall_rule(os_info: dict, port: int = 8001) -> bool:
                 capture_output=True,
                 text=True
             )
-            return res.returncode == 0 and RULE_NAME in res.stdout
+            if res.returncode == 0 and RULE_NAME in res.stdout:
+                if "Pública" not in res.stdout and "Cualquiera" not in res.stdout and "Public" not in res.stdout and "Any" not in res.stdout:
+                    return False
+                return True
+            return False
         except Exception:
             return False
     elif system == "Linux":
@@ -61,9 +65,11 @@ def configure_firewall_rule(os_info: dict, port: int = 8001, lang: str = "es") -
     print_info(f"Configurando regla de firewall para el puerto {port} (Red LAN/Wi-Fi)..." if lang == "es" else f"Configuring firewall rule for port {port} (LAN/Wi-Fi)...")
 
     if system == "Windows":
-        rule_cmd = f'advfirewall firewall add rule name="{RULE_NAME}" dir=in action=allow protocol=TCP localport={port} profile=private,domain description="SentinelOS Telemetry and Cockpit Port"'
+        del_cmd = f'advfirewall firewall delete rule name="{RULE_NAME}"'
+        rule_cmd = f'advfirewall firewall add rule name="{RULE_NAME}" dir=in action=allow protocol=TCP localport={port} profile=any description="SentinelOS Telemetry and Cockpit Port"'
         if is_admin():
             try:
+                subprocess.run(f"netsh {del_cmd}", shell=True, capture_output=True)
                 res = subprocess.run(f"netsh {rule_cmd}", shell=True, capture_output=True, text=True)
                 if res.returncode == 0:
                     msg = f"Regla de Windows Defender Firewall habilitada con éxito para el puerto {port}." if lang == "es" else f"Windows Defender Firewall rule successfully added for port {port}."
@@ -76,7 +82,7 @@ def configure_firewall_rule(os_info: dict, port: int = 8001, lang: str = "es") -
         else:
             # Invocar elevación UAC limpia mediante PowerShell
             try:
-                ps_cmd = f'Start-Process netsh -ArgumentList \'{rule_cmd}\' -Verb RunAs -Wait -WindowStyle Hidden'
+                ps_cmd = f'Start-Process cmd -ArgumentList \'/c netsh {del_cmd} & netsh {rule_cmd}\' -Verb RunAs -Wait -WindowStyle Hidden'
                 res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], capture_output=True, text=True, timeout=30)
                 if check_firewall_rule(os_info, port):
                     msg = f"Regla de Windows Defender Firewall habilitada con éxito para el puerto {port}." if lang == "es" else f"Windows Defender Firewall rule successfully added for port {port}."
