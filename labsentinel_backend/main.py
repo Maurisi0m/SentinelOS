@@ -930,11 +930,39 @@ async def remote_proxy(target_url: str):
             target_url,
             headers={"User-Agent": "SentinelOS-Core-Proxy/1.0", "Accept": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=3) as resp:
+        with urllib.request.urlopen(req, timeout=4) as resp:
             data = resp.read()
             return json.loads(data.decode("utf-8"))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Proxy error: {str(e)}")
+
+@app.post("/api/remote/proxy")
+async def remote_proxy_post(request: Request, target_url: str):
+    """Proxy POST request to remote Sentinel nodes (e.g. Klipper commands, actions)."""
+    try:
+        if not (target_url.startswith("http://") or target_url.startswith("https://")):
+            raise HTTPException(status_code=400, detail="Invalid target URL")
+        
+        body = await request.body()
+        auth_header = request.headers.get("Authorization", "")
+        token_header = request.headers.get("X-Sentinel-Token", "")
+        
+        headers = {
+            "User-Agent": "SentinelOS-Core-Proxy/1.0",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        if auth_header:
+            headers["Authorization"] = auth_header
+        if token_header:
+            headers["X-Sentinel-Token"] = token_header
+
+        req = urllib.request.Request(target_url, data=body, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = resp.read()
+            return json.loads(data.decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Proxy POST error: {str(e)}")
 
 @app.get("/api/health")
 def health_check():

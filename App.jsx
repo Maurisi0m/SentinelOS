@@ -83,6 +83,7 @@ function App() {
   // Multi-Server Containers & System/Services State
   const [selectedDockerServer, setSelectedDockerServer] = useState('all');
   const [selectedTailscaleServer, setSelectedTailscaleServer] = useState('all');
+  const [selectedPrinterServer, setSelectedPrinterServer] = useState('auto');
   const [selectedSystemServer, setSelectedSystemServer] = useState('all');
   const [remoteServices, setRemoteServices] = useState({});
   const [procFilterQuery, setProcFilterQuery] = useState('');
@@ -1845,31 +1846,177 @@ function App() {
   };
 
   const renderPrinter = () => {
-    const isKlippyReady = data.moonraker?.klippy_state === 'ready';
-    
-    if (!isKlippyReady) {
+    // 1. Descubrir todas las instancias de Klipper / Moonraker disponibles en el cluster
+    const allKlipperPrinters = [];
+
+    // Nodo local (Host Maestro)
+    const isLocalKlippy = data?.moonraker?.klippy_state === 'ready' || data?.printer?.print_stats;
+    if (isLocalKlippy || data?.moonraker?.klippy_state) {
+      allKlipperPrinters.push({
+        id: 'local',
+        name: 'Host Maestro (Local)',
+        isLocal: true,
+        data: data,
+        moonraker: data.moonraker || {},
+        printer: data.printer || {},
+        klippy_state: data.moonraker?.klippy_state || (data.printer?.print_stats ? 'ready' : 'offline'),
+        url: API_URL
+      });
+    }
+
+    // Servidores satélites remotos conectados (ej. Servidor HP ProLiant, Raspberry Pi)
+    Object.entries(remoteServersData).forEach(([srvId, srvObj]) => {
+      const srv = connectedServers.find(s => s.id === srvId) || { id: srvId, name: srvId };
+      const rData = srvObj?.data;
+      const isRemoteKlippy = rData?.moonraker?.klippy_state === 'ready' || rData?.printer?.print_stats;
+      if (isRemoteKlippy || rData?.moonraker?.klippy_state) {
+        allKlipperPrinters.push({
+          id: srvId,
+          name: srv.name || srvId,
+          isLocal: false,
+          data: rData,
+          moonraker: rData.moonraker || {},
+          printer: rData.printer || {},
+          klippy_state: rData.moonraker?.klippy_state || (rData.printer?.print_stats ? 'ready' : 'offline'),
+          url: srv.url || ''
+        });
+      }
+    });
+
+    // 2. Determinar la impresora activa:
+    // Si el usuario seleccionó una específica se usa, de lo contrario se auto-selecciona la primera lista para imprimir
+    let activePrinter = null;
+    if (selectedPrinterServer !== 'auto') {
+      activePrinter = allKlipperPrinters.find(p => p.id === selectedPrinterServer);
+    }
+    if (!activePrinter) {
+      activePrinter = allKlipperPrinters.find(p => p.klippy_state === 'ready') || allKlipperPrinters[0] || null;
+    }
+
+    // Enrutador de comandos 3D multi-servidor (local y satélites)
+    const handlePrinterAction = async (endpoint, payload) => {
+      if (!activePrinter) return;
+      if (activePrinter.isLocal) {
+        return handleAction(endpoint, payload);
+      }
+      const targetUrl = activePrinter.url.replace(/\/+$/, '');
+      const srv = connectedServers.find(s => s.id === activePrinter.id);
+      const headers = { 'Content-Type': 'application/json' };
+      if (srv?.token) {
+        headers['Authorization'] = `Bearer ${srv.token}`;
+        headers['X-Sentinel-Token'] = srv.token;
+      }
+      try {
+        const directRes = await fetch(`${targetUrl}/api/${endpoint.replace(/^api\//, '')}`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(4000)
+        });
+        if (!directRes.ok) throw new Error(`HTTP ${directRes.status}`);
+      } catch (err) {
+        try {
+          await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/' + endpoint.replace(/^api\//, ''))}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(5000)
+          });
+        } catch (proxyErr) {
+          console.error("Error al enviar comando a impresora remota:", proxyErr);
+        }
+      }
+    };
+
+    const handleAction = handlePrinterAction;
+
+    // Si no hay ninguna impresora Klipper lista en ningún servidor del cluster
+    if (!activePrinter || activePrinter.klippy_state !== 'ready') {
       return (
-        <div className="glass-panel" style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh'}}>
-          <Power size={64} color="var(--text-secondary)" style={{marginBottom: '1rem'}} />
-          <h2 style={{color: 'var(--text-secondary)'}}>Klipper No Detectado / No Instalado</h2>
-          <p style={{color: 'var(--text-secondary)'}}>Esta sección solo está disponible si Klipper y Moonraker fueron activados durante la instalación.</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {/* Selector de servidor si hay nodos con Klipper aunque estén desconectados */}
+          {allKlipperPrinters.length > 0 && (
+            <div className="glass-panel" style={{ padding: '0.75rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Printer size={20} color="#f43f5e" />
+                <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#f8fafc' }}>Seleccionar Servidor con Impresora 3D:</span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {allKlipperPrinters.map(p => (
+                  <button
+                    key={p.id}
+                    className={`server-filter-chip ${activePrinter?.id === p.id ? 'active' : ''}`}
+                    onClick={() => setSelectedPrinterServer(p.id)}
+                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
+                  >
+                    {p.name} ({p.klippy_state})
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '55vh', textAlign: 'center', padding: '2.5rem 1.5rem' }}>
+            <div style={{ background: 'rgba(244, 63, 94, 0.1)', padding: '1.25rem', borderRadius: '50%', marginBottom: '1.25rem' }}>
+              <Printer size={52} color="#f43f5e" />
+            </div>
+            <h2 style={{ color: '#f8fafc', margin: '0 0 0.5rem 0', fontSize: '1.35rem' }}>Klipper / Moonraker No Detectado en Este Equipo</h2>
+            <p style={{ color: 'var(--text-secondary)', maxWidth: '580px', lineHeight: 1.6, fontSize: '0.92rem', margin: '0 0 1.5rem 0' }}>
+              Si tienes tu impresora 3D conectada mediante USB o MCU a otro servidor en tu red (por ejemplo tu servidor HP, Raspberry Pi u Orange Pi), SentinelOS la detectará y mostrará automáticamente en este Dashboard Maestro una vez que vincules ese equipo.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', width: '100%', maxWidth: '680px', marginBottom: '1.75rem', textAlign: 'left' }}>
+              <div style={{ background: 'rgba(0, 0, 0, 0.35)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '1rem' }}>
+                <div style={{ color: '#38bdf8', fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.35rem' }}>1. Instala SentinelOS en el Servidor</div>
+                <div style={{ color: '#94a3b8', fontSize: '0.8rem', lineHeight: 1.4 }}>
+                  Al instalar con rol Servidor o Malla, SentinelOS escanea automáticamente el puerto 7125 (Moonraker) y los dispositivos USB MCU.
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(0, 0, 0, 0.35)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '1rem' }}>
+                <div style={{ color: '#10b981', fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.35rem' }}>2. Vincula el Servidor al Cockpit</div>
+                <div style={{ color: '#94a3b8', fontSize: '0.8rem', lineHeight: 1.4 }}>
+                  Presiona el botón inferior, escribe la IP del servidor (o su MagicDNS Tailscale) y su PIN. El panel 3D se activará en vivo.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button 
+                className="btn btn-primary" 
+                onClick={() => setServerModalOpen(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0.6rem 1.25rem' }}
+              >
+                <Plus size={16} /> Conectar Servidor Satélite con Klipper
+              </button>
+              <button 
+                className="btn" 
+                onClick={fetchData}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0.6rem 1.25rem' }}
+              >
+                <RefreshCw size={16} /> Reintentar Detección
+              </button>
+            </div>
+          </div>
         </div>
       );
     }
 
-    const stats = data.printer?.print_stats || {};
-    const sd = data.printer?.virtual_sdcard || {};
-    const toolhead = data.printer?.toolhead || {};
-    const fan = data.printer?.fan || {};
-    const gcode_move = data.printer?.gcode_move || {};
-    const display_status = data.printer?.display_status || {};
-    const ext = data.printer?.extruder || {};
-    const bed = data.printer?.heater_bed || {};
+    // Telemetría en tiempo real de la impresora activa (local o remota)
+    const printerData = activePrinter.printer || {};
+    const stats = printerData.print_stats || {};
+    const sd = printerData.virtual_sdcard || {};
+    const toolhead = printerData.toolhead || {};
+    const fan = printerData.fan || {};
+    const gcode_move = printerData.gcode_move || {};
+    const display_status = printerData.display_status || {};
+    const ext = printerData.extruder || {};
+    const bed = printerData.heater_bed || {};
     
     const progress = (display_status.progress || sd.progress || 0) * 100;
     const isPrinting = stats.state === 'printing';
     
-    // Time formatting
+    // Formateo de tiempo
     const formatTime = (sec) => {
         if (!sec) return '--';
         const h = Math.floor(sec / 3600);
@@ -1878,7 +2025,35 @@ function App() {
     };
 
     return (
-      <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+      <div style={{display: 'flex', flexDirection: 'column', gap: '1.25rem'}}>
+        {/* Barra Superior: Selector Multi-Servidor de Impresoras 3D */}
+        <div className="glass-panel" style={{ padding: '0.75rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Printer size={22} color="#f43f5e" />
+            <div>
+              <h2 style={{ margin: 0, fontSize: '1.15rem' }}>Control Maestro de Impresión 3D (Klipper)</h2>
+              <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                Servidor Activo: <strong style={{ color: '#38bdf8' }}>{activePrinter.name}</strong> • Estado MCU: <strong style={{ color: '#10b981' }}>{activePrinter.klippy_state.toUpperCase()}</strong> • Endpoint: <span style={{ fontFamily: 'monospace', color: '#cbd5e1' }}>{activePrinter.url || 'Local'}</span>
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.76rem', color: '#94a3b8', fontWeight: 600 }}>Impresora / Nodo:</span>
+            {allKlipperPrinters.map(p => (
+              <button
+                key={p.id}
+                className={`server-filter-chip ${activePrinter.id === p.id ? 'active' : ''}`}
+                onClick={() => setSelectedPrinterServer(p.id)}
+                style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <span className={`status-indicator ${p.klippy_state === 'ready' ? 'status-online' : 'status-offline'}`} style={{ width: '7px', height: '7px' }}></span>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div style={{display: 'grid', gridTemplateColumns: 'minmax(300px, 350px) 1fr minmax(300px, 350px)', gap: '1.5rem', alignItems: 'start'}}>
         
         {/* LEFT COLUMN */}
@@ -4663,12 +4838,16 @@ function App() {
     </div>
   );
 
-  const isKlipperReady = data?.moonraker?.klippy_state === 'ready';
+  const isKlipperReady = Boolean(
+    data?.moonraker?.klippy_state === 'ready' || 
+    data?.printer?.print_stats ||
+    Object.values(remoteServersData).some(s => s?.data?.moonraker?.klippy_state === 'ready' || s?.data?.printer?.print_stats)
+  );
 
   const navItems = [
     { id: 'sentinel', icon: <Bot size={20} color="#00f0ff"/>, label: 'SENTINEL AI', isSentinel: true },
     { id: 'overview', icon: <LayoutDashboard size={20}/>, label: 'Dashboard' },
-    ...(isKlipperReady ? [{ id: 'printer', icon: <Printer size={20}/>, label: '3D Printer' }] : []),
+    { id: 'printer', icon: <Printer size={20} color={isKlipperReady ? '#f43f5e' : undefined}/>, label: '3D Printer', isLive: isKlipperReady },
     { id: 'docker', icon: <Database size={20}/>, label: 'Containers' },
     { id: 'processes', icon: <Activity size={20}/>, label: 'System & Services' },
     { id: 'network', icon: <Network size={20}/>, label: 'Network & VPN' },
@@ -4847,6 +5026,11 @@ function App() {
               {item.icon}
               {!sidebarCollapsed && <span style={{fontWeight: item.isSentinel ? 700 : 500}}>{item.label}</span>}
               {!sidebarCollapsed && item.isSentinel && <span className="sentinel-nav-badge">IA</span>}
+              {!sidebarCollapsed && item.isLive && (
+                <span style={{ marginLeft: 'auto', background: '#f43f5e', color: '#fff', fontSize: '0.62rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+                  LIVE
+                </span>
+              )}
             </div>
           ))}
         </nav>
