@@ -47,7 +47,18 @@ function App() {
   const [connectedServers, setConnectedServers] = useState(() => {
     try {
       const saved = localStorage.getItem('sentinel_connected_servers');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map(s => {
+            if (s.isLocal || !s.url) return s;
+            let u = s.url.trim().replace(/\/+$/, '');
+            if (!u.startsWith('http://') && !u.startsWith('https://')) u = `http://${u}`;
+            if (!u.includes(':', 7)) u = `${u}:8001`;
+            return { ...s, url: u };
+          });
+        }
+      }
     } catch (e) {}
     return [
       { id: 'local', name: 'Host Maestro (Local)', url: '', isLocal: true, status: 'online' }
@@ -122,9 +133,12 @@ function App() {
           let res;
           const headers = srv.token ? { 'Authorization': `Bearer ${srv.token}`, 'X-Sentinel-Token': srv.token } : {};
           try {
-            res = await fetch(`${targetUrl}/api/data`, { headers, signal: AbortSignal.timeout(2500) });
+            res = await fetch(`${targetUrl}/api/data`, { headers, signal: AbortSignal.timeout(4500) });
           } catch (directErr) {
-            res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/data')}`, { signal: AbortSignal.timeout(3000) });
+            res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/data')}`, {
+              headers,
+              signal: AbortSignal.timeout(6000)
+            });
           }
 
           if (res.ok) {
@@ -153,9 +167,12 @@ function App() {
               try {
                 let sRes;
                 try {
-                  sRes = await fetch(`${targetUrl}/api/services`, { headers, signal: AbortSignal.timeout(2500) });
+                  sRes = await fetch(`${targetUrl}/api/services`, { headers, signal: AbortSignal.timeout(3500) });
                 } catch (e) {
-                  sRes = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/services')}`, { signal: AbortSignal.timeout(3000) });
+                  sRes = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/services')}`, {
+                    headers,
+                    signal: AbortSignal.timeout(5000)
+                  });
                 }
                 if (sRes.ok) {
                   const sBody = await sRes.json();
@@ -195,10 +212,14 @@ function App() {
         const targetUrl = srv.url.replace(/\/+$/, '');
         try {
           let res;
+          const headers = srv.token ? { 'Authorization': `Bearer ${srv.token}`, 'X-Sentinel-Token': srv.token } : {};
           try {
-            res = await fetch(`${targetUrl}/api/logs`, { signal: AbortSignal.timeout(2500) });
+            res = await fetch(`${targetUrl}/api/logs`, { headers, signal: AbortSignal.timeout(3500) });
           } catch (e) {
-            res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/logs')}`, { signal: AbortSignal.timeout(3000) });
+            res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/logs')}`, {
+              headers,
+              signal: AbortSignal.timeout(5000)
+            });
           }
           if (res.ok) {
             const body = await res.json();
@@ -260,21 +281,25 @@ function App() {
     if (!target.startsWith('http://') && !target.startsWith('https://')) {
       target = `http://${target}`;
     }
+    if (!target.includes(':', 7)) {
+      target = `${target}:8001`;
+    }
     target = target.replace(/\/+$/, '');
 
+    const headers = newServerForm.token.trim() ? { 'Authorization': `Bearer ${newServerForm.token.trim()}`, 'X-Sentinel-Token': newServerForm.token.trim() } : {};
     try {
       let res;
       try {
-        res = await fetch(`${target}/api/node/info`, { signal: AbortSignal.timeout(2500) });
+        res = await fetch(`${target}/api/node/info`, { headers, signal: AbortSignal.timeout(4000) });
       } catch (err) {
-        res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(target + '/api/node/info')}`, { signal: AbortSignal.timeout(3000) });
+        res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(target + '/api/node/info')}`, { headers, signal: AbortSignal.timeout(6000) });
       }
 
       if (res.ok) {
         const info = await res.json();
         setServerTestStatus({
           ok: true,
-          msg: `Conexión confirmada con ${info.node_name || 'Nodo Remoto'} (${info.cores || '?'} Núcleos, ${info.memory_gb || '?'} GB RAM)`
+          msg: `Conexión confirmada con ${info.node_name || 'Nodo Remoto'} (${info.cores || '?'} Núcleos, ${info.total_ram_gb || info.memory_gb || '?'} GB RAM)`
         });
       } else {
         setServerTestStatus({ ok: false, msg: `El servidor respondió con código ${res.status}` });
@@ -292,6 +317,9 @@ function App() {
     let target = newServerForm.url.trim();
     if (!target.startsWith('http://') && !target.startsWith('https://')) {
       target = `http://${target}`;
+    }
+    if (!target.includes(':', 7)) {
+      target = `${target}:8001`;
     }
     target = target.replace(/\/+$/, '');
 
@@ -4605,26 +4633,68 @@ function App() {
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isOnline ? '#10b981' : '#ef4444' }} />
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isOnline ? '#10b981' : '#ef4444', boxShadow: isOnline ? '0 0 8px rgba(16,185,129,0.5)' : 'none' }} />
                     <div>
-                      <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.9rem' }}>{srv.name}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.9rem' }}>{srv.name}</span>
+                        <span style={{
+                          fontSize: '0.68rem',
+                          padding: '0.1rem 0.4rem',
+                          borderRadius: '4px',
+                          fontWeight: 700,
+                          background: isOnline ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                          color: isOnline ? '#34d399' : '#f87171',
+                          border: `1px solid ${isOnline ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                        }}>
+                          {isOnline ? 'ONLINE' : 'DESCONECTADO'}
+                        </span>
+                      </div>
                       <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'monospace' }}>
                         {srv.isLocal ? '127.0.0.1 (Nodo Local Maestro)' : srv.url}
                       </div>
                     </div>
                   </div>
 
-                  <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     {srv.isLocal ? (
                       <span style={{ fontSize: '0.75rem', color: '#60a5fa', fontWeight: 700 }}>PRINCIPAL</span>
                     ) : (
-                      <button
-                        onClick={() => handleRemoveServer(srv.id)}
-                        className="btn btn-danger"
-                        style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
-                      >
-                        Desconectar
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const targetUrl = srv.url.replace(/\/+$/, '');
+                              const headers = srv.token ? { 'Authorization': `Bearer ${srv.token}`, 'X-Sentinel-Token': srv.token } : {};
+                              let res;
+                              try {
+                                res = await fetch(`${targetUrl}/api/node/info`, { headers, signal: AbortSignal.timeout(3500) });
+                              } catch(e) {
+                                res = await fetch(`${API_URL}/remote/proxy?target_url=${encodeURIComponent(targetUrl + '/api/node/info')}`, { headers, signal: AbortSignal.timeout(5000) });
+                              }
+                              if (res.ok) {
+                                addNotification(`Nodo ${srv.name} responde correctamente.`, 'success');
+                              } else {
+                                addNotification(`Nodo ${srv.name} respondió con error ${res.status}.`, 'warning');
+                              }
+                            } catch(e) {
+                              addNotification(`No se pudo contactar a ${srv.name}. Revisa IP y firewall.`, 'error');
+                            }
+                          }}
+                          className="btn btn-secondary"
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
+                          title="Probar conectividad inmediata"
+                        >
+                          Probar
+                        </button>
+                        <button
+                          onClick={() => handleRemoveServer(srv.id)}
+                          className="btn btn-danger"
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
+                        >
+                          Desconectar
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

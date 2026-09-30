@@ -48,20 +48,45 @@ app = FastAPI(title="Lab Sentinel OS API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 @app.middleware("http")
-async def add_no_cache_header(request, call_next):
+async def add_custom_headers(request, call_next):
+    if request.method == "OPTIONS":
+        response = await call_next(request)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+        return response
+
     response = await call_next(request)
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
+    response.headers["Access-Control-Allow-Private-Network"] = "true"
     return response
 
 MOONRAKER_URL = "http://127.0.0.1:7125"
+_MOONRAKER_ACTIVE = False
+_LAST_MOONRAKER_CHECK = 0.0
+
+def is_moonraker_running() -> bool:
+    global _MOONRAKER_ACTIVE, _LAST_MOONRAKER_CHECK
+    now = time.time()
+    if now - _LAST_MOONRAKER_CHECK < 8.0:
+        return _MOONRAKER_ACTIVE
+    _LAST_MOONRAKER_CHECK = now
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.12)
+            _MOONRAKER_ACTIVE = (s.connect_ex(("127.0.0.1", 7125)) == 0)
+    except Exception:
+        _MOONRAKER_ACTIVE = False
+    return _MOONRAKER_ACTIVE
 
 def command(*args: str, timeout: float = 2) -> str:
     try:
@@ -625,15 +650,15 @@ def collect_data() -> dict:
         fast_data["metrics_history"] = list(history_buffer)
         return fast_data
 
-    # Full Klipper State
-    klipper_query = {"objects": {"webhooks": None, "print_stats": None, "virtual_sdcard": None, "gcode_move": None, "toolhead": None, "fan": None, "extruder": None, "heater_bed": None, "display_status": None}}
-    klipper_resp = get_json(MOONRAKER_URL + "/printer/objects/query", klipper_query).get("result", {}).get("status", {})
-    
-    # Get recent console output (gcode store)
-    gcode_store = get_json(MOONRAKER_URL + "/server/gcode_store?count=50").get("result", {}).get("gcode_store", [])
-    
-    # Get server state from Moonraker directly to know if klippy is disconnected
-    moonraker_info = get_json(MOONRAKER_URL + "/server/info").get("result", {})
+    # Full Klipper State - Only query if Moonraker port is actually open
+    klipper_resp = {}
+    gcode_store = []
+    moonraker_info = {}
+    if is_moonraker_running():
+        klipper_query = {"objects": {"webhooks": None, "print_stats": None, "virtual_sdcard": None, "gcode_move": None, "toolhead": None, "fan": None, "extruder": None, "heater_bed": None, "display_status": None}}
+        klipper_resp = get_json(MOONRAKER_URL + "/printer/objects/query", klipper_query).get("result", {}).get("status", {})
+        gcode_store = get_json(MOONRAKER_URL + "/server/gcode_store?count=50").get("result", {}).get("gcode_store", [])
+        moonraker_info = get_json(MOONRAKER_URL + "/server/info").get("result", {})
     
     # Docker Containers
     containers = []
@@ -920,17 +945,28 @@ def collect_data() -> dict:
     return result_data
 
 @app.get("/api/remote/proxy")
-async def remote_proxy(target_url: str):
+async def remote_proxy(request: Request, target_url: str):
     """Proxy request to remote Sentinel nodes to prevent CORS / Mixed Content issues."""
     try:
         if not (target_url.startswith("http://") or target_url.startswith("https://")):
             raise HTTPException(status_code=400, detail="Invalid target URL")
         
+        headers = {
+            "User-Agent": "SentinelOS-Core-Proxy/1.0",
+            "Accept": "application/json"
+        }
+        auth_header = request.headers.get("Authorization")
+        if auth_header:
+            headers["Authorization"] = auth_header
+        token_header = request.headers.get("X-Sentinel-Token")
+        if token_header:
+            headers["X-Sentinel-Token"] = token_header
+
         req = urllib.request.Request(
             target_url,
-            headers={"User-Agent": "SentinelOS-Core-Proxy/1.0", "Accept": "application/json"}
+            headers=headers
         )
-        with urllib.request.urlopen(req, timeout=4) as resp:
+        with urllib.request.urlopen(req, timeout=8) as resp:
             data = resp.read()
             return json.loads(data.decode("utf-8"))
     except Exception as e:
