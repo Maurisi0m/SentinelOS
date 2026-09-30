@@ -174,7 +174,7 @@ export default function SentinelCockpit({ onExit }) {
 
   // IA Descargar States
   const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [downloadUrl, setDownloadUrl] = useState("sentinel-agentic-1b:latest");
+  const [downloadUrl, setDownloadUrl] = useState("https://huggingface.co/Maurisi0m/Sentinel-Agentic-1B/resolve/main/sentinel-agentic-1b.Q4_K_M.gguf");
   const [downloadModelName, setDownloadModelName] = useState("sentinel-agentic-1b");
   const [downloadLogs, setDownloadLogs] = useState([]);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -985,17 +985,17 @@ const toggleMic = () => {
                 </label>
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   {[
-                    { name: 'Sentinel Agentic 1B', id: 'sentinel-agentic-1b:latest', desc: 'GGUF Agéntico Optimizado' },
-                    { name: 'Llama 3.2 1B Instruct', id: 'llama3.2:1b', desc: 'Rápido, 1.3 GB' },
-                    { name: 'Llama 3.2 3B', id: 'llama3.2:3b', desc: 'Precisión, 2.0 GB' },
-                    { name: 'Qwen 2.5 Coder 1.5B', id: 'qwen2.5-coder:1.5b', desc: 'Código & Scripts' }
+                    { name: 'Sentinel 1B (Hugging Face)', id: 'https://huggingface.co/Maurisi0m/Sentinel-Agentic-1B/resolve/main/sentinel-agentic-1b.Q4_K_M.gguf', modelName: 'sentinel-agentic-1b', desc: 'GGUF Oficial Hugging Face' },
+                    { name: 'Llama 3.2 1B Instruct', id: 'llama3.2:1b', modelName: 'llama3.2:1b', desc: 'Rápido, 1.3 GB' },
+                    { name: 'Llama 3.2 3B', id: 'llama3.2:3b', modelName: 'llama3.2:3b', desc: 'Precisión, 2.0 GB' },
+                    { name: 'Qwen 2.5 Coder 1.5B', id: 'qwen2.5-coder:1.5b', modelName: 'qwen2.5-coder:1.5b', desc: 'Código & Scripts' }
                   ].map(p => (
                     <button
                       key={p.id}
                       type="button"
                       onClick={() => {
                         setDownloadUrl(p.id);
-                        setDownloadModelName(p.id.split(':')[0]);
+                        setDownloadModelName(p.modelName || p.id.split(':')[0]);
                       }}
                       style={{
                         padding: '0.4rem 0.7rem',
