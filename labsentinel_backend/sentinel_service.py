@@ -164,6 +164,9 @@ def get_llama_server_api_url() -> str:
     return _get_hp_ai_endpoint("LLAMA_SERVER_API_URL", LLAMA_SERVER_API_URL)
 
 
+_OLLAMA_MODELS_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
 def _choose_ollama_model(preferred_model: str, installed_models: List[str]) -> str:
     """Use a model tag that is actually installed on the HP's Ollama instance."""
     clean_models = [name.strip() for name in installed_models if isinstance(name, str) and name.strip()]
@@ -183,18 +186,55 @@ def _choose_ollama_model(preferred_model: str, installed_models: List[str]) -> s
 
 async def _get_ollama_model_names(session: aiohttp.ClientSession, base_url: str) -> List[str]:
     """Read model tags from the HP without assuming a particular Sentinel tag exists."""
+    cached = _OLLAMA_MODELS_CACHE.get(base_url)
+    if cached and time.time() - cached["time"] < 60:
+        return list(cached["models"])
     try:
-        async with session.get(f"{base_url}/api/tags", timeout=aiohttp.ClientTimeout(total=3)) as response:
+        async with session.get(
+            f"{base_url}/api/tags",
+            timeout=aiohttp.ClientTimeout(total=1.5, sock_connect=1.0),
+        ) as response:
             if response.status != 200:
-                return []
+                return list(cached["models"]) if cached else []
             body = await response.json()
-            return [
+            models = [
                 item.get("name") or item.get("model")
                 for item in body.get("models", [])
                 if isinstance(item, dict) and (item.get("name") or item.get("model"))
             ]
+            _OLLAMA_MODELS_CACHE[base_url] = {"time": time.time(), "models": models}
+            return models
     except Exception:
-        return []
+        return list(cached["models"]) if cached else []
+
+
+async def warm_ollama_model() -> None:
+    """Load the default conversational model in the background after backend startup."""
+    if get_active_model_id() == "nvidia-nemotron":
+        return
+    ollama_base = get_ollama_api_url()
+    try:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=300, sock_connect=2, sock_read=60)
+        ) as session:
+            installed = await _get_ollama_model_names(session, ollama_base)
+            model = _choose_ollama_model("sentinel:latest", installed)
+            if model not in installed:
+                return
+            async with session.post(
+                f"{ollama_base}/api/chat",
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": "Responde únicamente: listo."}],
+                    "stream": False,
+                    "keep_alive": -1,
+                    "options": {"num_ctx": 2048, "num_predict": 1, "num_thread": 4},
+                },
+            ) as response:
+                if response.status != 200:
+                    logger.info("El calentamiento de Ollama terminó con HTTP %s.", response.status)
+    except Exception as err:
+        logger.info("No se pudo precargar Ollama durante el arranque: %s", err)
 
 # Estado de actividad de la IA para concentración de recursos en tiempo real
 IS_AI_ACTIVE = False
@@ -725,11 +765,17 @@ async def chat_with_sentinel_stream(
             formatted_messages.append({"role": "user", "content": enriched_user_content})
 
         llama_url = f"{get_llama_server_api_url()}/v1/chat/completions"
+        max_response_tokens = (
+            96 if is_user_greeting else
+            384 if effort_lower == "low" else
+            1200 if effort_lower == "high" else
+            768
+        )
         llama_payload = {
             "messages": formatted_messages,
             "cache_prompt": True,
             "stream": True,
-            "max_tokens": 450 if is_server_query else 1200,
+            "max_tokens": 450 if is_server_query else max_response_tokens,
             "temperature": temperature,
             "top_p": top_p,
             # Sampling calibrado para rigor matemático y cero distorsión de variables:
@@ -745,7 +791,9 @@ async def chat_with_sentinel_stream(
         is_stream_start = True
 
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300, sock_read=60)) as session:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=300, sock_connect=1.5, sock_read=60)
+            ) as session:
                 async with session.post(llama_url, json=llama_payload) as resp:
                     if resp.status == 200:
                         used_llama_server = True
@@ -809,7 +857,7 @@ async def chat_with_sentinel_stream(
                 "options": {
                     "num_thread": 4,
                     "num_ctx": 2048,
-                    "num_predict": -1,
+                    "num_predict": 450 if is_server_query else max_response_tokens,
                     "temperature": temperature,
                     "top_k": top_k,
                     "top_p": top_p,
@@ -819,7 +867,9 @@ async def chat_with_sentinel_stream(
 
             try:
                 token_buffer = ""
-                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300, sock_read=60)) as session:
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=300, sock_connect=2, sock_read=60)
+                ) as session:
                     installed_models = await _get_ollama_model_names(session, ollama_base)
                     selected_model = _choose_ollama_model(requested_model, installed_models)
                     payload["model"] = selected_model

@@ -350,7 +350,22 @@ def get_cpu_model() -> str:
     import platform
     return platform.processor() or "Generic Processor"
 
-def get_gpu_info() -> dict:
+_GPU_INFO_CACHE = {
+    "has_gpu": False,
+    "model": "None",
+    "vram_total_mb": 0,
+    "vram_used_mb": 0,
+    "vram_free_mb": 0,
+    "usage": 0.0,
+    "temp": 0.0,
+    "driver": "",
+    "vendor": "None",
+}
+_GPU_INFO_CACHE_TIME = 0.0
+_GPU_INFO_CACHE_LOCK = threading.Lock()
+_GPU_INFO_REFRESHING = False
+
+def _query_gpu_info() -> dict:
     try:
         if shutil.which("nvidia-smi"):
             out = subprocess.check_output(
@@ -430,6 +445,25 @@ def get_gpu_info() -> dict:
         "vendor": "None"
     }
 
+def get_gpu_info() -> dict:
+    """Return cached GPU data so repeated dashboard polls do not spawn PowerShell/nvidia-smi."""
+    global _GPU_INFO_CACHE, _GPU_INFO_CACHE_TIME, _GPU_INFO_REFRESHING
+    now = time.time()
+    with _GPU_INFO_CACHE_LOCK:
+        if now - _GPU_INFO_CACHE_TIME < 8.0 or _GPU_INFO_REFRESHING:
+            return dict(_GPU_INFO_CACHE)
+        _GPU_INFO_REFRESHING = True
+
+    try:
+        fresh = _query_gpu_info()
+        with _GPU_INFO_CACHE_LOCK:
+            _GPU_INFO_CACHE = dict(fresh)
+            _GPU_INFO_CACHE_TIME = time.time()
+            return dict(_GPU_INFO_CACHE)
+    finally:
+        with _GPU_INFO_CACHE_LOCK:
+            _GPU_INFO_REFRESHING = False
+
 # Historical Buffer (Last 300 seconds = 5 minutes)
 history_buffer = deque(maxlen=300)
 
@@ -470,6 +504,54 @@ async def arp_scanner_loop():
         
         ai_busy = getattr(sentinel_service, 'is_ai_active', lambda: False)(); await asyncio.sleep(30 if ai_busy else 10) # Throttled when AI active
 
+def _collect_metric_sample() -> dict:
+    """Run potentially blocking OS and Moonraker probes outside the asyncio loop."""
+    now = datetime.now().strftime("%H:%M:%S")
+    cpu_p = cpu_meter.percent()
+    cpu_t = get_cpu_temp()
+    net_s = net_meter.get_speed()
+    disk_s = disk_meter.get_speed()
+
+    try:
+        if os.path.exists("/proc/meminfo"):
+            with open("/proc/meminfo", encoding="utf-8") as file:
+                mem = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in file}
+            used_mem = mem.get("MemTotal", 0) - mem.get("MemAvailable", 0)
+            mem_p = (used_mem / mem.get("MemTotal", 1)) * 100
+        else:
+            mem_p = psutil.virtual_memory().percent
+    except Exception:
+        try:
+            mem_p = psutil.virtual_memory().percent
+        except Exception:
+            mem_p = 0
+
+    # Klipper temps are optional; their timeout must not block the API event loop.
+    klipper = {}
+    if is_moonraker_running():
+        klipper = get_json(
+            MOONRAKER_URL + "/printer/objects/query",
+            {"objects": {"extruder": ["temperature", "target"], "heater_bed": ["temperature", "target"]}},
+        ).get("result", {}).get("status", {})
+    e_temp = klipper.get("extruder", {}).get("temperature", 0)
+    b_temp = klipper.get("heater_bed", {}).get("temperature", 0)
+
+    gpu_data = get_gpu_info()
+    return {
+        "time": now,
+        "cpu": round(cpu_p, 1),
+        "ram": round(mem_p, 1),
+        "temp": round(cpu_t, 1),
+        "gpu": round(gpu_data.get("usage", 0.0) if gpu_data.get("has_gpu") else 0.0, 1),
+        "gpu_temp": round(gpu_data.get("temp", 0.0) if gpu_data.get("has_gpu") else 0.0, 1),
+        "net_rx": round(net_s["rx"] / 1024 / 1024, 2),
+        "net_tx": round(net_s["tx"] / 1024 / 1024, 2),
+        "disk_r": round(disk_s["read"] / 1024 / 1024, 2),
+        "disk_w": round(disk_s["write"] / 1024 / 1024, 2),
+        "klipper_e": round(e_temp, 1),
+        "klipper_b": round(b_temp, 1),
+    }
+
 async def metric_collector():
     while True:
         try:
@@ -477,59 +559,19 @@ async def metric_collector():
                 await asyncio.sleep(5)
                 continue
 
-            now = datetime.now().strftime("%H:%M:%S")
-            cpu_p = cpu_meter.percent()
-            cpu_t = get_cpu_temp()
-            net_s = net_meter.get_speed()
-            disk_s = disk_meter.get_speed()
-            
-            try:
-                if os.path.exists("/proc/meminfo"):
-                    with open("/proc/meminfo", encoding="utf-8") as file:
-                        mem = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in file}
-                    used_mem = mem.get("MemTotal", 0) - mem.get("MemAvailable", 0)
-                    mem_p = (used_mem / mem.get("MemTotal", 1)) * 100
-                else:
-                    mem_p = psutil.virtual_memory().percent
-            except Exception:
-                try:
-                    mem_p = psutil.virtual_memory().percent
-                except Exception:
-                    mem_p = 0
-            
-            # Klipper temps
-            klipper = get_json(MOONRAKER_URL + "/printer/objects/query", {"objects": {"extruder": ["temperature", "target"], "heater_bed": ["temperature", "target"]}}).get("result", {}).get("status", {})
-            e_temp = klipper.get("extruder", {}).get("temperature", 0)
-            b_temp = klipper.get("heater_bed", {}).get("temperature", 0)
-            
-            # GPU metrics
-            gpu_data = get_gpu_info()
-            gpu_u = gpu_data.get("usage", 0.0) if gpu_data.get("has_gpu") else 0.0
-            gpu_t = gpu_data.get("temp", 0.0) if gpu_data.get("has_gpu") else 0.0
-
-            history_buffer.append({
-                "time": now,
-                "cpu": round(cpu_p, 1),
-                "ram": round(mem_p, 1),
-                "temp": round(cpu_t, 1),
-                "gpu": round(gpu_u, 1),
-                "gpu_temp": round(gpu_t, 1),
-                "net_rx": round(net_s["rx"] / 1024 / 1024, 2), # MB/s
-                "net_tx": round(net_s["tx"] / 1024 / 1024, 2), # MB/s
-                "disk_r": round(disk_s["read"] / 1024 / 1024, 2), # MB/s
-                "disk_w": round(disk_s["write"] / 1024 / 1024, 2), # MB/s
-                "klipper_e": round(e_temp, 1),
-                "klipper_b": round(b_temp, 1)
-            })
+            sample = await asyncio.to_thread(_collect_metric_sample)
+            history_buffer.append(sample)
         except Exception as e:
             print("Collector error:", e)
-        
-        ai_busy = getattr(sentinel_service, 'is_ai_active', lambda: False)(); await asyncio.sleep(3 if ai_busy else 1)
+
+        ai_busy = getattr(sentinel_service, "is_ai_active", lambda: False)()
+        await asyncio.sleep(3 if ai_busy else 1)
 
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(metric_collector())
     asyncio.create_task(arp_scanner_loop())
+    asyncio.create_task(sentinel_service.warm_ollama_model())
     start_mesh_engine(port=SERVICE_PORT, get_telemetry_fn=collect_data)
 
 _CACHED_SYSTEM_DATA = None
@@ -672,8 +714,8 @@ def collect_data() -> dict:
     now = time.time()
     ai_busy = getattr(sentinel_service, "is_ai_active", lambda: False)()
 
-    # If AI active or scanned within 12s, serve fast in-memory cache without heavy subprocesses
-    if _CACHED_SYSTEM_DATA is not None and (ai_busy or (now - _LAST_FULL_SCAN_TIME < 12.0)):
+    # Keep full host scans infrequent; the dedicated metrics collector refreshes charts every second.
+    if _CACHED_SYSTEM_DATA is not None and (ai_busy or (now - _LAST_FULL_SCAN_TIME < 30.0)):
         fast_data = dict(_CACHED_SYSTEM_DATA)
         try:
             fast_data["system"] = dict(fast_data.get("system", {}))
