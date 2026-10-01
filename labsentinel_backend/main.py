@@ -564,8 +564,7 @@ async def metric_collector():
         except Exception as e:
             print("Collector error:", e)
 
-        ai_busy = getattr(sentinel_service, "is_ai_active", lambda: False)()
-        await asyncio.sleep(3 if ai_busy else 1)
+        await asyncio.sleep(1)
 
 @app.on_event("startup")
 async def startup_event():
