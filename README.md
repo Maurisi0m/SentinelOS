@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="SentinelOS Logo" width="520" />
+</p>
+
 # SentinelOS (v2.0) - Sistema Operativo Cognitivo Distribuido
 
 <p align="center">
@@ -9,6 +13,7 @@
   <img src="https://img.shields.io/badge/HuggingFace-Official%20Model-f59e0b?style=for-the-badge&logo=huggingface&logoColor=white" />
   <img src="https://img.shields.io/badge/License-MIT-3b82f6?style=for-the-badge" />
 </p>
+
 
 Plataforma de infraestructura, orquestacion de red distribuida y telemetria en tiempo real para centros de computo, laboratorios de investigacion y servidores de mision critica. Integra gestion de flota multi-nodo mediante descubrimiento UDP local y tuneles cifrados, motor de inferencia agentica ReAct local cuantizado y un panel de control interactivo de alta definicion.
 
