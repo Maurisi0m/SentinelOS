@@ -11,14 +11,13 @@ except ImportError:
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-def start_services(background=True, port=3000):
+def start_services(background=True):
     print(f"[*] Iniciando plataforma de laboratorio SentinelOS desde {BASE_DIR}...")
     
-    # 1. Si Node / npm está disponible y node_modules está instalado, usar Node
+    # 1. Si Node / npm está disponible, iniciar el servidor unificado de Node
     npm_path = shutil.which("npm") or shutil.which("npm.cmd")
-    node_modules = BASE_DIR / "node_modules"
-    if npm_path and node_modules.exists() and (BASE_DIR / "package.json").exists():
-        print(f"[*] Iniciando servidor SentinelOS Cockpit (Node.js/Vite en puerto {port})...")
+    if npm_path and (BASE_DIR / "package.json").exists():
+        print("[*] Iniciando servidor SentinelOS Cockpit (Node.js/Vite en puerto 3000)...")
         if background:
             if sys.platform == "win32":
                 subprocess.Popen([npm_path, "run", "dev"], cwd=str(BASE_DIR),
@@ -26,27 +25,13 @@ def start_services(background=True, port=3000):
             else:
                 subprocess.Popen([npm_path, "run", "dev"], cwd=str(BASE_DIR),
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-            print(f"[+] Servidor lanzado en segundo plano: http://localhost:{port}")
-            return port
+            print("[+] Servidor lanzado en segundo plano: http://localhost:3000")
+            return
         else:
             subprocess.run([npm_path, "run", "dev"], cwd=str(BASE_DIR))
-            return port
+            return
 
-    # 2. Servidor nativo Python (0 dependencias externas, ideal para estudiantes con solo Git y Python)
-    print(f"[*] Iniciando servidor nativo de laboratorio en Python (puerto {port})...")
-    server_script = BASE_DIR / "installer" / "server_py.py"
-    if background:
-        if sys.platform == "win32":
-            subprocess.Popen([sys.executable, str(server_script)], cwd=str(BASE_DIR),
-                             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS)
-        else:
-            subprocess.Popen([sys.executable, str(server_script)], cwd=str(BASE_DIR),
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        print(f"[+] Servidor nativo Python activo: http://localhost:{port}")
-        return port
-    else:
-        subprocess.run([sys.executable, str(server_script)], cwd=str(BASE_DIR))
-        return port
+    print("[!] Nota: Ejecuta 'npm install' y 'npm run dev' para el frontend web.")
 
 def stop_services():
     print("[*] Deteniendo procesos de SentinelOS...")

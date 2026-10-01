@@ -18,8 +18,6 @@ def release_port(port: int) -> bool:
     killed = False
     for proc in psutil.process_iter(['pid', 'name']):
         try:
-            if proc.info['pid'] <= 4:
-                continue
             for conn in proc.net_connections(kind='inet'):
                 if conn.laddr and conn.laddr.port == port:
                     print(f"[*] Liberando puerto {port} ocupado por {proc.info['name']} (PID {proc.info['pid']})...")
