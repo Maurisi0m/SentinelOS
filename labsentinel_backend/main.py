@@ -40,8 +40,6 @@ from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 import vault_manager
 import sentinel_service
-import lora_manager
-
 try:
     from mesh_engine import (
         start_mesh_engine,

@@ -29,51 +29,6 @@ CONFIG_FILE = os.path.join(BASE_DIR, "active_model.json")
 OLLAMA_API_URL = "http://127.0.0.1:11434"
 LLAMA_SERVER_API_URL = "http://127.0.0.1:8080"
 
-def get_ollama_api_url() -> str:
-    """Detecta dinamicamente si Ollama esta corriendo en localhost o en un nodo de la red (ej. Servidor HP)."""
-    env_url = os.environ.get("OLLAMA_API_URL") or os.environ.get("OLLAMA_HOST")
-    if env_url:
-        if not env_url.startswith("http"):
-            env_url = f"http://{env_url}"
-        return env_url.rstrip("/")
-
-    # 1. Comprobar localhost (11434)
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.12)
-            if s.connect_ex(("127.0.0.1", 11434)) == 0:
-                return "http://127.0.0.1:11434"
-    except Exception:
-        pass
-
-    # 2. Comprobar Servidor HP en LAN o Tailscale
-    candidate_hosts = ["192.168.68.65", "100.113.156.109", "labsentinel.tailc83bd7.ts.net", "192.168.68.68"]
-    try:
-        from mesh_engine import get_mesh_nodes
-        for n in get_mesh_nodes():
-            for c in n.get("candidates", []):
-                try:
-                    import urllib.parse
-                    p = urllib.parse.urlparse(c).hostname
-                    if p and p not in candidate_hosts:
-                        candidate_hosts.append(p)
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-    for host in candidate_hosts:
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(0.25)
-                if s.connect_ex((host, 11434)) == 0:
-                    return f"http://{host}:11434"
-        except Exception:
-            continue
-
-    return "http://127.0.0.1:11434"
-
-
 # NVIDIA NIM Cloud API Config
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "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")
@@ -314,9 +269,9 @@ async def check_ollama_status() -> Dict[str, Any]:
             "installed_models": [m["name"] for m in AVAILABLE_MODELS]
         }
 
-    # Modelos locales (llama-server o Ollama)
+    # Modelos locales (llama-server)
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=1.2)) as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as session:
             async with session.get(f"{LLAMA_SERVER_API_URL}/props") as props_resp:
                 if props_resp.status == 200:
                     props_data = await props_resp.json()
@@ -328,24 +283,6 @@ async def check_ollama_status() -> Dict[str, Any]:
                         "model_id": active_id,
                         "type": "local",
                         "installed_models": [m["name"] for m in AVAILABLE_MODELS]
-                    }
-    except Exception:
-        pass
-
-    target_ollama_url = get_ollama_api_url()
-    try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2.0)) as session:
-            async with session.get(f"{target_ollama_url}/api/tags") as tags_resp:
-                if tags_resp.status == 200:
-                    tags_data = await tags_resp.json()
-                    models_list = [m["name"] for m in tags_data.get("models", [])]
-                    loc = "Local" if "127.0.0.1" in target_ollama_url else "Servidor HP"
-                    return {
-                        "online": True,
-                        "active_model": f"{active_meta['name']} ({loc})",
-                        "model_id": active_id,
-                        "type": "local",
-                        "installed_models": models_list or [m["name"] for m in AVAILABLE_MODELS]
                     }
     except Exception:
         pass
@@ -509,11 +446,10 @@ async def chat_with_sentinel_stream(
         # RUTA 2: MODELOS LOCALES AVX2 (LLAMA-SERVER CON ANTI-BUCLES)
         # =====================================================================
         if is_user_greeting:
-            active_model = "sentinel:latest"
+            active_model = "sentinel-master:titan"
             temperature = 0.08
             top_k = 10
             top_p = 0.80
-
             effort_instruction = ""
             thinking_instruction = ""
         elif effort_lower == "low":
@@ -703,9 +639,7 @@ async def chat_with_sentinel_stream(
 
         # Fallback a Ollama si llama-server no respondió
         if not used_llama_server:
-            ollama_base = get_ollama_api_url()
-            url = f"{ollama_base}/api/chat"
-
+            url = f"{OLLAMA_API_URL}/api/chat"
             payload = {
                 "model": active_model or "sentinel:latest",
                 "messages": formatted_messages,
