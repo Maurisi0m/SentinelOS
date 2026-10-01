@@ -16,22 +16,9 @@ import threading
 import secrets
 
 NOTIFICATIONS_QUEUE = deque(maxlen=50)
-SYSTEM_LOG_BUFFER = deque(maxlen=250)
-
-def log_event(message: str, level: str = "INFO"):
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    entry = f"[{now_str}] [{level}] {message}"
-    SYSTEM_LOG_BUFFER.append(entry)
-
-now_init = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-SYSTEM_LOG_BUFFER.append(f"[{now_init}] [INFO] SentinelOS Kernel Telemetry initialized on {platform.system()} {platform.release()}")
-SYSTEM_LOG_BUFFER.append(f"[{now_init}] [INFO] Hardware Topology: {psutil.cpu_count(logical=True)} vCPUs | {round(psutil.virtual_memory().total / (1024**3), 1)} GB RAM")
-SYSTEM_LOG_BUFFER.append(f"[{now_init}] [SUCCESS] FastAPI & Uvicorn runtime active on port 8001")
-SYSTEM_LOG_BUFFER.append(f"[{now_init}] [INFO] Distributed Mesh UDP Beacon listening on port 8002")
 
 def notify(msg: str, type: str = "info"):
     NOTIFICATIONS_QUEUE.append({"msg": msg, "type": type, "ts": time.time()})
-    log_event(f"Notification: {msg}", "ALERT" if type in ["error", "warning"] else "INFO")
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -100,14 +87,6 @@ async def add_custom_headers(request, call_next):
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
-    try:
-        p = request.url.path
-        if not (p.endswith(".js") or p.endswith(".css") or p.endswith(".ico") or p.endswith(".png") or p.endswith(".svg")):
-            if p not in ["/api/logs"]:
-                client_ip = request.client.host if request.client else "127.0.0.1"
-                log_event(f'{client_ip} - "{request.method} {p}" {response.status_code}', "INFO")
-    except Exception:
-        pass
     return response
 
 MOONRAKER_URL = "http://127.0.0.1:7125"
@@ -1401,39 +1380,33 @@ def get_sys_logs():
     if os.path.exists(log_file):
         try:
             with open(log_file, "r", encoding="utf-8", errors="replace") as f:
-                file_logs = [l.strip() for l in f.readlines()[-60:] if l.strip()]
+                file_logs = [l.strip() for l in f.readlines()[-80:] if l.strip()]
         except Exception:
             pass
 
-    sys_logs = []
+    sys_logs = ""
     if sys.platform != "win32":
-        raw = command("journalctl", "-u", "labsentinel.service", "-n", "60", "--no-pager")
-        if not raw:
-            raw = command("journalctl", "-n", "40", "--no-pager")
-        if raw:
-            sys_logs = [l.strip() for l in raw.splitlines() if l.strip()]
+        sys_logs = command("journalctl", "-u", "labsentinel.service", "-n", "60", "--no-pager")
+        if not sys_logs:
+            sys_logs = command("journalctl", "-n", "40", "--no-pager")
 
-    combined = []
-    if file_logs:
-        combined.extend(file_logs)
-    if sys_logs:
-        combined.append("--- SYSTEMD JOURNAL ---")
-        combined.extend(sys_logs[-50:])
-    if SYSTEM_LOG_BUFFER:
-        combined.extend(list(SYSTEM_LOG_BUFFER))
-
-    if not combined:
+    if file_logs and sys_logs:
+        return {"logs": "\n".join(file_logs[-40:] + ["--- SYSTEMD JOURNAL ---"] + sys_logs.splitlines()[-40:])}
+    elif file_logs:
+        return {"logs": "\n".join(file_logs)}
+    elif sys_logs:
+        return {"logs": sys_logs}
+    else:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         uptime_s = int(time.time() - psutil.boot_time())
-        combined = [
+        sample_logs = [
             f"[{now_str}] [INFO] SentinelOS Kernel Telemetry Active. Uptime: {uptime_s}s",
             f"[{now_str}] [INFO] Host System: {platform.system()} {platform.release()} ({platform.machine()})",
             f"[{now_str}] [INFO] Core Hardware: {psutil.cpu_count(logical=True)} vCPUs | {round(psutil.virtual_memory().total / (1024**3), 1)} GB RAM",
             f"[{now_str}] [INFO] Sockets: FastAPI & Uvicorn daemon listening on 0.0.0.0:8001 (HTTP 200 OK)",
             f"[{now_str}] [SUCCESS] Subsystem health check: ALL PASS"
         ]
-
-    return {"logs": "\n".join(combined[-120:])}
+        return {"logs": "\n".join(sample_logs)}
 
 @app.get("/api/fs")
 def get_fs(path: str = "/"):
