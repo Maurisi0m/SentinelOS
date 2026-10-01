@@ -6,7 +6,7 @@ Configura reglas de entrada avanzadas para conectividad LAN, Wi-Fi y Malla en:
 - Windows Defender Firewall, WFP y Antivirus de terceros (Avast, Norton, McAfee, AVG).
 - Linux UFW / Firewalld / Iptables.
 """
-import os, sys, shutil, subprocess
+import os, sys, shutil, subprocess, base64, re
 from .banner import Colors, print_success, print_warning, print_info, print_panel
 
 RULE_NAME = "SentinelOS Core"
@@ -179,24 +179,163 @@ def configure_firewall_rule(os_info: dict, port: int = 8001, lang: str = "es", r
 
     return False, "Unsupported OS"
 
-def remove_firewall_rule(os_info: dict, port: int = 8001, lang: str = "es") -> bool:
-    """Remueve todas las reglas creadas de firewall al desinstalar."""
+def _run_powershell_script(script: str, elevate: bool = False) -> subprocess.CompletedProcess:
+    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+    command = ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
+    if is_admin() or not elevate:
+        return subprocess.run(command, capture_output=True, text=True, timeout=60)
+
+    # Keep the script in an encoded argument so paths with spaces or quotes stay literal.
+    launch_script = (
+        "$p = Start-Process -FilePath 'powershell.exe' "
+        f"-ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand','{encoded}') "
+        "-Verb RunAs -Wait -PassThru; exit $p.ExitCode"
+    )
+    return subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", launch_script],
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+
+
+def _run_linux_firewall_command(args: list[str]) -> subprocess.CompletedProcess:
+    """Run a firewall command as root without shell interpolation."""
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return subprocess.run(args, capture_output=True, text=True, timeout=30)
+    sudo = shutil.which("sudo")
+    if not sudo:
+        return subprocess.CompletedProcess(args, 127, "", "sudo is unavailable")
+    return subprocess.run([sudo, "-n", *args], capture_output=True, text=True, timeout=30)
+
+
+def remove_firewall_rule(os_info: dict, port: int = 8001, lang: str = "es", root_dir: str = None) -> bool:
+    """Remove SentinelOS-owned firewall entries and its matching Defender exclusion."""
     system = os_info.get("system", "Linux")
+    ports = sorted({int(port), int(port) + 1, 8003})
+
     if system == "Windows":
+        names = [RULE_NAME, RULE_NAME_UDP, RULE_NAME_PY, RULE_NAME_PYW]
+        # Older Tailscale helper releases used one rule per service port.
+        names.extend(f"SentinelOS_{item}" for item in ports)
+        display_names = ",".join("'" + name.replace("'", "''") + "'" for name in names)
+        exclusion_path = os.path.realpath(root_dir or os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        ps_path = "'" + exclusion_path.replace("'", "''") + "'"
+        script = f"""
+$names = @({display_names})
+$failed = $false
+try {{
+    if (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue) {{
+        foreach ($name in $names) {{
+            $rules = @(Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue)
+            if ($rules.Count -gt 0) {{ $rules | Remove-NetFirewallRule -ErrorAction Stop }}
+        }}
+    }} else {{
+        foreach ($name in $names) {{ & netsh advfirewall firewall delete rule ("name=" + $name) | Out-Null }}
+    }}
+}} catch {{ Write-Error $_; $failed = $true }}
+try {{
+    if (Get-Command Get-MpPreference -ErrorAction SilentlyContinue) {{
+        $prefs = Get-MpPreference -ErrorAction Stop
+        if (@($prefs.ExclusionPath | ForEach-Object {{ [string]$_ }}) -contains {ps_path}) {{
+            Remove-MpPreference -ExclusionPath {ps_path} -ErrorAction Stop
+        }}
+    }}
+}} catch {{ Write-Warning ("No se pudo retirar la exclusión local de Defender: " + $_.Exception.Message); $failed = $true }}
+if ($failed) {{ exit 1 }}
+exit 0
+"""
         try:
-            rules = [RULE_NAME, RULE_NAME_UDP, RULE_NAME_PY, RULE_NAME_PYW]
-            del_cmds = " & ".join([f'netsh advfirewall firewall delete rule name="{r}"' for r in rules])
-            if is_admin():
-                subprocess.run(f"cmd /c {del_cmds}", shell=True, capture_output=True)
-            else:
-                ps_cmd = f'Start-Process cmd -ArgumentList \'/c {del_cmds}\' -Verb RunAs -Wait -WindowStyle Hidden'
-                subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], capture_output=True)
-            return True
-        except Exception:
+            result = _run_powershell_script(script, elevate=True)
+            if result.returncode == 0:
+                print_success("Reglas de SentinelOS y su excepción de Defender eliminadas." if lang == "es" else "SentinelOS firewall rules and Defender exclusion removed.")
+                return True
+            print_warning((result.stderr or result.stdout or "No se pudieron quitar las reglas de Windows Firewall.").strip())
             return False
-    elif system == "Linux":
-        if shutil.which("ufw"):
-            subprocess.run(f"sudo ufw delete allow {port}/tcp 2>/dev/null || true", shell=True, capture_output=True)
-            subprocess.run(f"sudo ufw delete allow {port}/udp 2>/dev/null || true", shell=True, capture_output=True)
-        return True
-    return False
+        except Exception as exc:
+            print_warning(f"No se pudo completar la limpieza del Firewall: {exc}")
+            return False
+
+    if system != "Linux":
+        return False
+
+    success = True
+    if shutil.which("ufw"):
+        # Delete only numbered rules carrying SentinelOS comments, preserving user rules on the same ports.
+        try:
+            listing = _run_linux_firewall_command(["ufw", "status", "numbered"])
+            if listing.returncode == 0:
+                matches = []
+                for line in listing.stdout.splitlines():
+                    match = re.match(r"^\s*\[\s*(\d+)\]\s+.*#\s*SentinelOS(?:\s|$)", line, re.IGNORECASE)
+                    # Legacy Tailscale setup opened its selected TCP port without a comment.
+                    legacy_match = re.match(
+                        rf"^\s*\[\s*(\d+)\]\s+{re.escape(str(port))}/tcp\s+ALLOW IN Anywhere(?:\s+\(v6\))?\s*$",
+                        line,
+                        re.IGNORECASE,
+                    )
+                    if match or legacy_match:
+                        matches.append(int((match or legacy_match).group(1)))
+                for number in sorted(matches, reverse=True):
+                    deleted = _run_linux_firewall_command(["ufw", "--force", "delete", str(number)])
+                    success = success and deleted.returncode == 0
+            else:
+                success = False
+        except Exception:
+            success = False
+
+    if shutil.which("firewall-cmd"):
+        # Legacy firewalld setup created unlabelled opens for these dedicated SentinelOS ports.
+        try:
+            state = subprocess.run(["firewall-cmd", "--state"], capture_output=True, text=True, timeout=15)
+            if state.returncode == 0 and state.stdout.strip().lower() == "running":
+                for item in ports:
+                    for protocol in ("tcp", "udp"):
+                        rule = f"{item}/{protocol}"
+                        query = subprocess.run(["firewall-cmd", "--permanent", f"--query-port={rule}"], capture_output=True, text=True, timeout=15)
+                        if query.returncode == 0:
+                            removed = _run_linux_firewall_command(["firewall-cmd", "--permanent", f"--remove-port={rule}"])
+                            success = success and removed.returncode == 0
+                reloaded = _run_linux_firewall_command(["firewall-cmd", "--reload"])
+                success = success and reloaded.returncode == 0
+            elif shutil.which("firewall-offline-cmd"):
+                for item in ports:
+                    for protocol in ("tcp", "udp"):
+                        removed = _run_linux_firewall_command([
+                            "firewall-offline-cmd", f"--remove-port={item}/{protocol}"
+                        ])
+                        # Offline firewalld returns nonzero when the port was absent.
+                        if removed.returncode != 0 and "not enabled" not in (removed.stderr or "").lower():
+                            success = False
+            else:
+                success = False
+        except Exception:
+            success = False
+
+    if shutil.which("iptables"):
+        # Remove exact legacy accepts on Sentinel's HTTP and UDP discovery ports.
+        # The Tailscale helper only ever created one TCP accept on its selected port.
+        managed_rules = [(int(port), "tcp", True)]
+        legacy_rules = [(int(port), "tcp", False)]
+        for item, protocol, tagged in managed_rules + legacy_rules:
+            args = ["iptables", "-D", "INPUT", "-p", protocol, "--dport", str(item)]
+            if tagged:
+                args.extend(["-m", "comment", "--comment", "SentinelOS Tailscale"])
+            args.extend(["-j", "ACCEPT"])
+            while True:
+                try:
+                    deleted = _run_linux_firewall_command(args)
+                    if deleted.returncode != 0:
+                        error = (deleted.stderr or "").lower()
+                        if "must be root" in error or "permission denied" in error:
+                            success = False
+                        break
+                except Exception:
+                    success = False
+                    break
+
+    if success:
+        print_success("Reglas de firewall de SentinelOS eliminadas." if lang == "es" else "SentinelOS firewall rules removed.")
+    else:
+        print_warning("La limpieza de firewall quedó incompleta; ejecuta la desinstalación con permisos de administrador." if lang == "es" else "Firewall cleanup was incomplete; rerun uninstall with administrator privileges.")
+    return success

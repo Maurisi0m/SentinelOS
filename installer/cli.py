@@ -18,6 +18,7 @@ import sys
 import time
 import json
 import socket
+import shutil
 import urllib.request
 import subprocess
 from .banner import Colors, print_success, print_warning, print_info, print_error
@@ -124,17 +125,25 @@ def cmd_active():
     print(f"{Colors.BOLD}{Colors.CYAN}╰─────────────────────────────────────────────────────────────────────╯{Colors.RESET}\n")
 
 def cmd_stop():
-    """Detiene todos los procesos y libera los puertos de SentinelOS."""
-    print(f"\n{Colors.BOLD}{Colors.YELLOW}Deteniendo SentinelOS y liberando puerto 8001...{Colors.RESET}")
-    kill_sentinel_processes()
+    """Detiene los procesos SentinelOS sin terminar aplicaciones ajenas por conflicto de puerto."""
+    print(f"\n{Colors.BOLD}{Colors.YELLOW}Deteniendo los procesos de SentinelOS (puertos 8001/8002)...{Colors.RESET}")
+    result = kill_sentinel_processes(ROOT_DIR)
+    if result["failed"]:
+        print_warning(f"No se pudieron detener estos PIDs de SentinelOS: {', '.join(map(str, result['failed']))}")
     if sys.platform != "win32":
-        subprocess.run(["systemctl", "stop", "labsentinel.service"], capture_output=True)
+        units = ["systemctl", "stop", "labsentinel.service", "sentinel.service", "sentinel-orchestrator.service"]
+        stopped = subprocess.run(units, capture_output=True)
+        if stopped.returncode and shutil.which("sudo"):
+            subprocess.run(["sudo", "-n", *units], capture_output=True)
     time.sleep(0.5)
-    pid, _ = get_process_on_port(8001)
-    if pid == 0:
-        print_success("SentinelOS detenido con éxito. Todos los puertos han sido liberados.")
+    occupied = {port: get_process_on_port(port)[0] for port in (8001, 8002)}
+    occupied = {port: pid for port, pid in occupied.items() if pid > 0}
+    if not occupied and not result["failed"]:
+        print_success("SentinelOS detenido con éxito; no quedan procesos escuchando en 8001/8002.")
     else:
-        print_warning(f"Advertencia: Aún hay un proceso en el puerto 8001 (PID: {pid}).")
+        details = ", ".join(f"{port} (PID {pid})" for port, pid in occupied.items())
+        if details:
+            print_warning(f"Quedan procesos en estos puertos; se dejaron intactos: {details}.")
 
 def cmd_restart():
     """Reinicia el servicio de SentinelOS."""

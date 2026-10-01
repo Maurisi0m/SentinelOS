@@ -148,9 +148,12 @@ def configure_external_firewall_access(port=8001, lang="es"):
     elif sys.platform.startswith("linux"):
         try:
             if shutil.which("ufw"):
-                subprocess.run(["ufw", "allow", f"{port}/tcp"], capture_output=True)
+                subprocess.run(["ufw", "allow", f"{port}/tcp", "comment", "SentinelOS Tailscale"], capture_output=True)
             elif shutil.which("iptables"):
-                subprocess.run(f"iptables -I INPUT -p tcp --dport {port} -j ACCEPT", shell=True, capture_output=True)
+                subprocess.run(
+                    ["iptables", "-I", "INPUT", "-p", "tcp", "--dport", str(port), "-m", "comment", "--comment", "SentinelOS Tailscale", "-j", "ACCEPT"],
+                    capture_output=True,
+                )
         except Exception:
             pass
 

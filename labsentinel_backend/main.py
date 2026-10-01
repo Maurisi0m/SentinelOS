@@ -1209,50 +1209,59 @@ class SystemUninstallRequest(BaseModel):
 def uninstall_system(req: SystemUninstallRequest):
     if not req.confirm:
         raise HTTPException(status_code=400, detail="Confirmación explícita requerida para desinstalar SentinelOS.")
-    
+
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     results = []
+    cleanup_complete = True
 
-    # 1. Deshabilitar autoinicio en Windows o Linux
-    if sys.platform == "win32":
-        try:
-            res = subprocess.run('schtasks /Delete /TN "SentinelOS_Service" /F', shell=True, capture_output=True, text=True)
-            results.append("Tarea programada de Windows removida.")
-        except Exception as e:
-            results.append(f"Aviso tarea programada: {e}")
-        
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            startup_bat = os.path.join(appdata, r"Microsoft\Windows\Start Menu\Programs\Startup\SentinelOS_AutoStart.cmd")
-            if os.path.exists(startup_bat):
-                try:
-                    os.remove(startup_bat)
-                    results.append("Acceso de autoinicio en Startup eliminado.")
-                except Exception as e:
-                    results.append(f"Aviso archivo inicio: {e}")
-            
-        start_bat = os.path.join(root_dir, "start_sentinel_bg.bat")
-        if os.path.exists(start_bat):
+    # Reuse the installer cleanup so the cockpit button removes the same processes,
+    # autostart entries and firewall rules as the terminal uninstaller.
+    if root_dir not in sys.path:
+        sys.path.insert(0, root_dir)
+    try:
+        from installer.uninstaller import (
+            kill_sentinel_processes,
+            remove_autostart_and_services,
+            remove_all_shortcuts,
+            remove_cli_from_path,
+        )
+        from installer.firewall import remove_firewall_rule
+
+        system_name = "Windows" if sys.platform == "win32" else "Linux" if sys.platform.startswith("linux") else platform.system()
+        process_result = kill_sentinel_processes(root_dir)
+        if process_result["failed"]:
+            cleanup_complete = False
+            results.append("No se pudieron detener algunos procesos: " + ", ".join(map(str, process_result["failed"])))
+        else:
+            results.append(f"Procesos de SentinelOS detenidos: {len(process_result['stopped'])}.")
+
+        # Keep this request alive long enough to return its response; the running
+        # service is stopped in delayed_shutdown below.
+        if remove_autostart_and_services(root_dir, stop_services=False):
+            results.append("Autoinicio y servicios registrados eliminados.")
+        else:
+            cleanup_complete = False
+            results.append("No se pudieron confirmar todas las tareas o servicios de autoinicio.")
+
+        if remove_firewall_rule({"system": system_name}, 8001, "es", root_dir=root_dir):
+            results.append("Reglas de firewall y excepción de Defender retiradas.")
+        else:
+            cleanup_complete = False
+            results.append("No se pudieron confirmar todas las limpiezas de firewall.")
+
+        remove_all_shortcuts(root_dir)
+        remove_cli_from_path(root_dir)
+        results.append("Accesos directos y comando sentinel retirados.")
+        for config_name in ("node_auth.json", "mesh_peers.json"):
+            config_path = os.path.join(root_dir, "config", config_name)
             try:
-                os.remove(start_bat)
-                results.append("Script de arranque en segundo plano eliminado.")
-            except Exception:
+                os.remove(config_path)
+                results.append(f"Configuración local retirada: {config_name}.")
+            except FileNotFoundError:
                 pass
-    else:
-        # Linux systemd
-        cmds = [
-            "systemctl stop labsentinel.service sentinel.service sentinel-orchestrator.service 2>/dev/null || true",
-            "systemctl disable labsentinel.service sentinel.service sentinel-orchestrator.service 2>/dev/null || true",
-            "rm -f /etc/systemd/system/labsentinel.service /etc/systemd/system/sentinel.service /etc/systemd/system/sentinel-orchestrator.service",
-            "rm -rf /etc/systemd/system/sentinel-orchestrator.service.d /etc/systemd/system/sentinel.service.d",
-            "systemctl daemon-reload 2>/dev/null || true"
-        ]
-        for c in cmds:
-            try:
-                subprocess.run(c, shell=True, capture_output=True)
-            except Exception:
-                pass
-        results.append("Servicios systemd detenidos y deshabilitados.")
+    except Exception as exc:
+        cleanup_complete = False
+        results.append(f"La limpieza del sistema quedó incompleta: {exc}")
 
     if req.purge_data:
         try:
@@ -1267,15 +1276,31 @@ def uninstall_system(req: SystemUninstallRequest):
     # 2. Planificar detención del backend local tras retornar la respuesta
     def delayed_shutdown():
         time.sleep(1.5)
+        if sys.platform.startswith("linux"):
+            try:
+                command = ["systemctl", "stop", "labsentinel.service", "sentinel.service", "sentinel-orchestrator.service"]
+                stopped = subprocess.run(command, capture_output=True, timeout=20)
+                if stopped.returncode and hasattr(os, "geteuid") and os.geteuid() != 0 and shutil.which("sudo"):
+                    subprocess.run(["sudo", "-n", *command], capture_output=True, timeout=20)
+            except Exception:
+                pass
         os._exit(0)
 
     import threading
     threading.Thread(target=delayed_shutdown, daemon=True).start()
 
+    if not cleanup_complete:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "La limpieza quedó incompleta; revisa los permisos y vuelve a ejecutar la desinstalación.",
+                "details": results,
+            },
+        )
     return {
         "status": "success",
-        "message": "SentinelOS ha sido desprogramado del autoinicio y los servicios del sistema han sido removidos exitosamente.",
-        "details": results
+        "message": "La limpieza de SentinelOS terminó; el backend local se detendrá en unos segundos.",
+        "details": results,
     }
 
 @app.get("/api/data")
