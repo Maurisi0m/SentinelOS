@@ -1,0 +1,176 @@
+# DATASET ESPECIALIZADO: 08_NETWORKING_BITS_AND_PROTOCOLS
+================================================================================
+REGLA ESTRICTA DE INVESTIGACIÓN: PROHIBIDO EL USO DE WIKIPEDIA.
+REFERENCIAS OBLIGATORIAS: ESTÁNDARES PRIMARIOS (RFCs, IEEE 802, NIST, MITRE).
+================================================================================
+
+## MÓDULO 1: Detalla la anatomía a nivel de bits de una trama Ethernet II (IEEE 802.3), explicando el preámbulo, direcciones MAC, MTU y el cálculo del CRC-32.
+
+En la capa de enlace de datos del modelo [[TCP/IP]], la unidad fundamental de transferencia es la [[Trama_Ethernet_II]]. Cada paquete IP se encapsula en esta estructura con alineación estricta de bytes:
+
+### Estructura de Campos de la Trama Ethernet II:
+1. **Preámbulo (7 bytes / 56 bits)**: Secuencia de sincronización de reloj alternante `10101010` repeated 7 veces.
+2. **Delimitador de Inicio de Trama (SFD - 1 byte / 8 bits)**: Patrón `10101011`. El par de bits finales `11` señaliza al hardware de la interfaz (PHY) que el siguiente bit corresponde a la dirección de destino.
+3. **Dirección MAC de Destino (6 bytes / 48 bits)**: Dirección física del receptor o broadcast (`FF:FF:FF:FF:FF:FF`). El bit menos significativo del primer octeto define si el tráfico es Unicast (`0`) o Multicast (`1`).
+4. **Dirección MAC de Origen (6 bytes / 48 bits)**: Identificador físico único de la tarjeta de red (NIC) emisora (primeros 24 bits: OUI del fabricante; últimos 24 bits: serial asignado).
+5. **EtherType (2 bytes / 16 bits)**: Indica el protocolo de capa de red contenido en la carga útil (`0x0800` para [[IPv4]], `0x86DD` para [[IPv6]], `0x0806` para [[ARP]]).
+6. **Carga Útil (Payload / 46 a 1500 bytes)**: Contiene el paquete IP. La [[MTU]] (*Maximum Transmission Unit*) por defecto es de 1500 bytes. Si el paquete es menor a 46 bytes, se inserta relleno (*padding*) para cumplir la longitud mínima de ranura de colisión (64 bytes totales en CSMA/CD).
+7. **Secuencia de Verificación de Trama (FCS / 4 bytes / 32 bits)**: Suma de verificación mediante código de redundancia cíclica [[CRC-32]].
+
+### Cálculo Matemático del CRC-32 (IEEE 802.3):
+El emisor trata los bits del mensaje como coeficientes de un polinomio en el campo de Galois $\mathbb{GF}(2)$ y realiza una división módulo 2 por el polinomio generador irreducible:
+$$G(x) = x^{32} + x^{26} + x^{23} + x^{22} + x^{16} + x^{12} + x^{11} + x^{10} + x^8 + x^7 + x^5 + x^4 + x^2 + x + 1$$
+Representación hexadecimal: `0x04C11DB7`. El resto de 32 bits resultante se invierte a nivel de bits y se adosa como FCS. Si la tarjeta receptora recalcula el CRC y detecta un resto distinto de cero, descarta la trama silenciosamente a nivel de silicio antes de interrumpir a la CPU del sistema operativo.
+
+--------------------------------------------------------------------------------
+
+## MÓDULO 2: Explica y desarrolla paso a paso el cálculo de subnetting VLSM en IPv4 para dividir una red /24 en subredes eficientes para servidores y enlaces punto a punto.
+
+El esquema [[VLSM]] (*Variable Length Subnet Masking*, estandarizado en [[RFC_1878]]) permite asignar máscaras de longitud variable a diferentes subredes derivadas de un mismo bloque, eliminando el desperdicio masivo del direccionamiento con clases (*classful*).
+
+### Planteamiento del Problema en el Laboratorio:
+Partimos del prefijo base `192.168.10.0/24` (256 direcciones totales). Se requiere diseñar:
+- **Subred A (Laboratorio de IA)**: Mínimo 50 hosts útiles.
+- **Subred B (Sensores IoT ESP32)**: Mínimo 25 hosts útiles.
+- **Subred C (Enlace troncal de routers WAN)**: Exactamente 2 hosts útiles.
+
+### Regla Fundamental de Asignación:
+Se ordenan las necesidades de mayor a menor tamaño para evitar superposición de bloques.
+
+#### 1. Subred A (50 hosts útiles):
+- Fórmula: $2^h - 2 \ge 50$. Con $h = 6$ bits de host: $2^6 - 2 = 64 - 2 = 62$ hosts útiles.
+- Bits de red: $32 - 6 = 26$ bits (Máscara `/26` o `255.255.255.192`).
+- **Dirección de Red**: `192.168.10.0/26`
+- **Rango de Hosts Útiles**: `192.168.10.1` a `192.168.10.62`
+- **Dirección de Broadcast**: `192.168.10.63`
+
+#### 2. Subred B (25 hosts útiles):
+- Siguiente dirección libre disponible: `192.168.10.64`.
+- Fórmula: $2^h - 2 \ge 25$. Con $h = 5$ bits de host: $2^5 - 2 = 32 - 2 = 30$ hosts útiles.
+- Bits de red: $32 - 5 = 27$ bits (Máscara `/27` o `255.255.255.224`).
+- **Dirección de Red**: `192.168.10.64/27`
+- **Rango de Hosts Útiles**: `192.168.10.65` a `192.168.10.94`
+- **Dirección de Broadcast**: `192.168.10.95`
+
+#### 3. Subred C (Enlace punto a punto - 2 hosts):
+- Siguiente dirección libre: `192.168.10.96`.
+- Fórmula: $2^h - 2 \ge 2$. Con $h = 2$ bits de host: $2^2 - 2 = 2$ hosts exactos.
+- Bits de red: $32 - 2 = 30$ bits (Máscara `/30` o `255.255.255.252`).
+- **Dirección de Red**: `192.168.10.96/30`
+- **Rango de Hosts Útiles**: `192.168.10.97` a `192.168.10.98`
+- **Dirección de Broadcast**: `192.168.10.99`
+
+Este cálculo reserva el bloque continuo desde `192.168.10.100` hasta `192.168.10.255` para futuras expansiones sin fragmentación.
+
+--------------------------------------------------------------------------------
+
+## MÓDULO 3: Explica la máquina de estados de TCP, el Three-Way Handshake, el estado TIME_WAIT y la diferencia entre los algoritmos de congestión CUBIC y BBR.
+
+El protocolo [[TCP]] ([[RFC_9293]]) es un protocolo de capa de transporte orientado a conexión con entrega confiable, control de flujo por ventana deslizante y control de saturación de red.
+
+### 1. Three-Way Handshake (Establecimiento de Conexión):
+```text
+Cliente                                                 Servidor
+   |  --- [SYN] Seq = X, MSS = 1460, WScale = 7 -------->  |  (Servidor en LISTEN)
+   |                                                       |  (Pasa a SYN_RECEIVED)
+   |  <-- [SYN+ACK] Seq = Y, Ack = X + 1, MSS = 1460 ----  |  
+   |  (Pasa a ESTABLISHED)                                 |  
+   |  --- [ACK] Seq = X + 1, Ack = Y + 1 --------------->  |  (Pasa a ESTABLISHED)
+```
+El intercambio acuerda los números de secuencia iniciales aleatorios ([[ISN]]), el tamaño máximo de segmento ([[MSS]]) y el factor de escala de ventana para enlaces de alto producto ancho de banda-retardo (*BDP*).
+
+### 2. Cierre de Conexión y Estado TIME_WAIT:
+El cierre estándar requiere 4 paquetes (`FIN -> ACK`, `FIN -> ACK`). El extremo que inicia el cierre activo entra obligatoriamente en el estado **TIME_WAIT** durante un período de **2MSL** (Maximum Segment Lifetime, típicamente 60 a 120 segundos en kernels de Linux).
+- **Objetivo 1**: Asegurar que el último `ACK` alcance al par. Si ese paquete se pierde en la red, el par retransmite el `FIN`; si el socket estuviera destruido, respondería con `RST` espurio.
+- **Objetivo 2**: Permitir que cualquier segmento duplicado o retrasado en los routers de tránsito expire antes de que una nueva conexión reutilice la misma tupla de 4 elementos (IP origen, puerto origen, IP destino, puerto destino).
+
+### 3. Control de Congestión: CUBIC vs BBR:
+- **CUBIC ([[RFC_8312]])**: Algoritmo tradicional basado en pérdidas de paquetes (*loss-based*). Incrementa la ventana de congestión (`cwnd`) siguiendo una función cúbica del tiempo transcurrido desde la última caída. Asume que la pérdida de paquetes es sinónimo de congestión física, lo que provoca subutilización severa en enlaces Wi-Fi con ruido o bufferbloat en routers de borde.
+- **BBR (Bottleneck Bandwidth and RTT)**: Diseñado por Google. Modela la red como un conducto físico midiendo de forma periódica e independiente dos variables: el ancho de banda máximo del cuello de botella ($BtlBw$) y el retardo mínimo de propagación de ida y vuelta ($RTprop$). BBR modula la tasa de inyección de paquetes para operar exactamente en el punto óptimo de Kleinrock (máximo rendimiento sin acumular colas en los buffers intermedios), reduciendo la latencia de transmisión a la mitad frente a CUBIC.
+
+--------------------------------------------------------------------------------
+
+## MÓDULO 4: ¿Cómo implementar un servidor TCP concurrente de alto rendimiento en C mediante la API de epoll en Linux para manejar miles de conexiones?
+
+En sistemas operativos Linux, el uso de hilos individuales por socket (`pthread_create`) o llamadas tradicionales `select()` colapsa al escalar a más de 1024 conexiones concurrentes (el problema C10K). La solución industrial es la llamada al sistema [[epoll]] en modo no bloqueante (*Non-blocking I/O*):
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <sys/epoll.h>
+#include <errno.h>
+
+#define MAX_EVENTS 64
+#define PORT 8080
+
+static int set_nonblocking(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+int main() {
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int opt = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(PORT),
+        .sin_addr.s_addr = INADDR_ANY
+    };
+    bind(server_fd, (struct sockaddr*)&addr, sizeof(addr));
+    set_nonblocking(server_fd);
+    listen(server_fd, SOMAXCONN);
+
+    int epoll_fd = epoll_create1(0);
+    struct epoll_event ev, events[MAX_EVENTS];
+    ev.events = EPOLLIN | EPOLLET; // Edge-Triggered mode
+    ev.data.fd = server_fd;
+    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev);
+
+    printf("[INFO] Servidor epoll escuchando en puerto %d\n", PORT);
+
+    while (1) {
+        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        for (int i = 0; i < nfds; i++) {
+            if (events[i].data.fd == server_fd) {
+                // Aceptar todas las conexiones entrantes en cola (modo Edge-Triggered)
+                while (1) {
+                    struct sockaddr_in client_addr;
+                    socklen_t client_len = sizeof(client_addr);
+                    int client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
+                    if (client_fd < 0) {
+                        if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+                        break;
+                    }
+                    set_nonblocking(client_fd);
+                    ev.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
+                    ev.data.fd = client_fd;
+                    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev);
+                }
+            } else if (events[i].events & EPOLLIN) {
+                char buffer[1024];
+                ssize_t bytes_read = read(events[i].data.fd, buffer, sizeof(buffer) - 1);
+                if (bytes_read > 0) {
+                    buffer[bytes_read] = '\0';
+                    write(events[i].data.fd, "ACK\n", 4);
+                } else if (bytes_read == 0 || (bytes_read < 0 && errno != EAGAIN)) {
+                    close(events[i].data.fd);
+                }
+            }
+        }
+    }
+    close(server_fd);
+    return 0;
+}
+```
+
+El modo `EPOLLET` (Edge-Triggered) notifica únicamente cuando cambia el estado del descriptor, reduciendo a cero el número de llamadas redundantes del kernel y alcanzando decenas de miles de conexiones concurrentes con consumo mínimo de CPU.
+
+--------------------------------------------------------------------------------
+

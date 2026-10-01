@@ -1,8 +1,0 @@
-{
-  "name": "SentinelOS - STEM Cognitive OS & Control Center",
-  "description": "Sistema Operativo y Cockpit de Laboratorio STEM con telemetría en tiempo real, topología de red, gestión de hardware y asistente cognitivo.",
-  "permissions": [],
-  "capabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}

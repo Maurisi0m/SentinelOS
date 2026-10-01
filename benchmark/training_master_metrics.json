@@ -1,0 +1,770 @@
+[
+  {
+    "step": 1,
+    "max_steps": 96,
+    "loss": 2.9125263690948486,
+    "learning_rate": 0.0,
+    "epoch": 0.031746031746031744,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 2,
+    "max_steps": 96,
+    "loss": 3.0040860176086426,
+    "learning_rate": 4e-05,
+    "epoch": 0.06349206349206349,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 3,
+    "max_steps": 96,
+    "loss": 2.582885503768921,
+    "learning_rate": 8e-05,
+    "epoch": 0.09523809523809523,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 4,
+    "max_steps": 96,
+    "loss": 2.951627254486084,
+    "learning_rate": 0.00012,
+    "epoch": 0.12698412698412698,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 5,
+    "max_steps": 96,
+    "loss": 2.8548531532287598,
+    "learning_rate": 0.00016,
+    "epoch": 0.15873015873015872,
+    "vram_allocated_mb": 3029.42
+  },
+  {
+    "step": 6,
+    "max_steps": 96,
+    "loss": 2.208054304122925,
+    "learning_rate": 0.0002,
+    "epoch": 0.19047619047619047,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 7,
+    "max_steps": 96,
+    "loss": 2.373617172241211,
+    "learning_rate": 0.00019994041405510705,
+    "epoch": 0.2222222222222222,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 8,
+    "max_steps": 96,
+    "loss": 1.9863468408584595,
+    "learning_rate": 0.0001997617272301248,
+    "epoch": 0.25396825396825395,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 9,
+    "max_steps": 96,
+    "loss": 1.7206330299377441,
+    "learning_rate": 0.0001994641524695193,
+    "epoch": 0.2857142857142857,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 10,
+    "max_steps": 96,
+    "loss": 1.7318251132965088,
+    "learning_rate": 0.00019904804439875633,
+    "epoch": 0.31746031746031744,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 11,
+    "max_steps": 96,
+    "loss": 1.7425825595855713,
+    "learning_rate": 0.0001985138989016874,
+    "epoch": 0.3492063492063492,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 12,
+    "max_steps": 96,
+    "loss": 1.592374324798584,
+    "learning_rate": 0.00019786235252959553,
+    "epoch": 0.38095238095238093,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 13,
+    "max_steps": 96,
+    "loss": 1.0654020309448242,
+    "learning_rate": 0.0001970941817426052,
+    "epoch": 0.4126984126984127,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 14,
+    "max_steps": 96,
+    "loss": 1.143794059753418,
+    "learning_rate": 0.00019621030198436006,
+    "epoch": 0.4444444444444444,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 15,
+    "max_steps": 96,
+    "loss": 1.2063950300216675,
+    "learning_rate": 0.00019521176659107142,
+    "epoch": 0.47619047619047616,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 16,
+    "max_steps": 96,
+    "loss": 1.2880098819732666,
+    "learning_rate": 0.00019409976553623766,
+    "epoch": 0.5079365079365079,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 17,
+    "max_steps": 96,
+    "loss": 1.0252254009246826,
+    "learning_rate": 0.00019287562401253022,
+    "epoch": 0.5396825396825397,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 18,
+    "max_steps": 96,
+    "loss": 0.976475715637207,
+    "learning_rate": 0.00019154080085253666,
+    "epoch": 0.5714285714285714,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 19,
+    "max_steps": 96,
+    "loss": 0.8865221738815308,
+    "learning_rate": 0.0001900968867902419,
+    "epoch": 0.6031746031746031,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 20,
+    "max_steps": 96,
+    "loss": 1.0698356628417969,
+    "learning_rate": 0.000188545602565321,
+    "epoch": 0.6349206349206349,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 21,
+    "max_steps": 96,
+    "loss": 0.9519212245941162,
+    "learning_rate": 0.00018688879687250067,
+    "epoch": 0.6666666666666666,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 22,
+    "max_steps": 96,
+    "loss": 0.839561402797699,
+    "learning_rate": 0.00018512844415843514,
+    "epoch": 0.6984126984126984,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 23,
+    "max_steps": 96,
+    "loss": 0.8444607853889465,
+    "learning_rate": 0.00018326664226872065,
+    "epoch": 0.7301587301587301,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 24,
+    "max_steps": 96,
+    "loss": 0.7344495058059692,
+    "learning_rate": 0.00018130560994785325,
+    "epoch": 0.7619047619047619,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 25,
+    "max_steps": 96,
+    "loss": 1.0364214181900024,
+    "learning_rate": 0.00017924768419510904,
+    "epoch": 0.7936507936507936,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 26,
+    "max_steps": 96,
+    "loss": 0.956045925617218,
+    "learning_rate": 0.00017709531747949796,
+    "epoch": 0.8253968253968254,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 27,
+    "max_steps": 96,
+    "loss": 1.0865774154663086,
+    "learning_rate": 0.00017485107481711012,
+    "epoch": 0.8571428571428571,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 28,
+    "max_steps": 96,
+    "loss": 0.8144176602363586,
+    "learning_rate": 0.00017251763071433765,
+    "epoch": 0.8888888888888888,
+    "vram_allocated_mb": 3029.42
+  },
+  {
+    "step": 29,
+    "max_steps": 96,
+    "loss": 0.9878644943237305,
+    "learning_rate": 0.00017009776598061495,
+    "epoch": 0.9206349206349206,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 30,
+    "max_steps": 96,
+    "loss": 0.9235899448394775,
+    "learning_rate": 0.00016759436441447545,
+    "epoch": 0.9523809523809523,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 31,
+    "max_steps": 96,
+    "loss": 0.8980556130409241,
+    "learning_rate": 0.00016501040936687443,
+    "epoch": 0.9841269841269841,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 32,
+    "max_steps": 96,
+    "loss": 0.7747607231140137,
+    "learning_rate": 0.00016234898018587337,
+    "epoch": 1.0,
+    "vram_allocated_mb": 3029.4
+  },
+  {
+    "step": 33,
+    "max_steps": 96,
+    "loss": 0.7960994243621826,
+    "learning_rate": 0.00015961324854692254,
+    "epoch": 1.0317460317460316,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 34,
+    "max_steps": 96,
+    "loss": 1.0401735305786133,
+    "learning_rate": 0.00015680647467311557,
+    "epoch": 1.0634920634920635,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 35,
+    "max_steps": 96,
+    "loss": 0.6929712891578674,
+    "learning_rate": 0.00015393200344991995,
+    "epoch": 1.0952380952380953,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 36,
+    "max_steps": 96,
+    "loss": 1.0504748821258545,
+    "learning_rate": 0.0001509932604390136,
+    "epoch": 1.126984126984127,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 37,
+    "max_steps": 96,
+    "loss": 0.9237931966781616,
+    "learning_rate": 0.00014799374779597867,
+    "epoch": 1.1587301587301586,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 38,
+    "max_steps": 96,
+    "loss": 1.0069832801818848,
+    "learning_rate": 0.00014493704009671613,
+    "epoch": 1.1904761904761905,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 39,
+    "max_steps": 96,
+    "loss": 0.7773589491844177,
+    "learning_rate": 0.0001418267800775565,
+    "epoch": 1.2222222222222223,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 40,
+    "max_steps": 96,
+    "loss": 0.9751385450363159,
+    "learning_rate": 0.0001386666742941419,
+    "epoch": 1.253968253968254,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 41,
+    "max_steps": 96,
+    "loss": 0.7478963732719421,
+    "learning_rate": 0.00013546048870425356,
+    "epoch": 1.2857142857142856,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 42,
+    "max_steps": 96,
+    "loss": 0.6002559661865234,
+    "learning_rate": 0.00013221204417984908,
+    "epoch": 1.3174603174603174,
+    "vram_allocated_mb": 3029.41
+  },
+  {
+    "step": 43,
+    "max_steps": 96,
+    "loss": 0.546096920967102,
+    "learning_rate": 0.00012892521195365678,
+    "epoch": 1.3492063492063493,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 44,
+    "max_steps": 96,
+    "loss": 0.9123150706291199,
+    "learning_rate": 0.0001256039090057547,
+    "epoch": 1.380952380952381,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 45,
+    "max_steps": 96,
+    "loss": 1.0597065687179565,
+    "learning_rate": 0.00012225209339563145,
+    "epoch": 1.4126984126984126,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 46,
+    "max_steps": 96,
+    "loss": 0.8049734830856323,
+    "learning_rate": 0.00011887375954529168,
+    "epoch": 1.4444444444444444,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 47,
+    "max_steps": 96,
+    "loss": 0.7855717539787292,
+    "learning_rate": 0.00011547293347902812,
+    "epoch": 1.4761904761904763,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 48,
+    "max_steps": 96,
+    "loss": 0.8465914726257324,
+    "learning_rate": 0.0001120536680255323,
+    "epoch": 1.507936507936508,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 49,
+    "max_steps": 96,
+    "loss": 0.4234166741371155,
+    "learning_rate": 0.00010862003798806196,
+    "epoch": 1.5396825396825395,
+    "vram_allocated_mb": 3029.41
+  },
+  {
+    "step": 50,
+    "max_steps": 96,
+    "loss": 0.5658614635467529,
+    "learning_rate": 0.00010517613528842097,
+    "epoch": 1.5714285714285714,
+    "vram_allocated_mb": 3029.41
+  },
+  {
+    "step": 51,
+    "max_steps": 96,
+    "loss": 0.9443155527114868,
+    "learning_rate": 0.00010172606409053886,
+    "epoch": 1.6031746031746033,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 52,
+    "max_steps": 96,
+    "loss": 0.7903938889503479,
+    "learning_rate": 9.827393590946116e-05,
+    "epoch": 1.6349206349206349,
+    "vram_allocated_mb": 3029.42
+  },
+  {
+    "step": 53,
+    "max_steps": 96,
+    "loss": 0.5463292002677917,
+    "learning_rate": 9.482386471157904e-05,
+    "epoch": 1.6666666666666665,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 54,
+    "max_steps": 96,
+    "loss": 0.9440515041351318,
+    "learning_rate": 9.137996201193805e-05,
+    "epoch": 1.6984126984126984,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 55,
+    "max_steps": 96,
+    "loss": 0.8926045894622803,
+    "learning_rate": 8.79463319744677e-05,
+    "epoch": 1.7301587301587302,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 56,
+    "max_steps": 96,
+    "loss": 0.7521499991416931,
+    "learning_rate": 8.452706652097186e-05,
+    "epoch": 1.7619047619047619,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 57,
+    "max_steps": 96,
+    "loss": 1.0501794815063477,
+    "learning_rate": 8.112624045470835e-05,
+    "epoch": 1.7936507936507935,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 58,
+    "max_steps": 96,
+    "loss": 0.9108413457870483,
+    "learning_rate": 7.774790660436858e-05,
+    "epoch": 1.8253968253968254,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 59,
+    "max_steps": 96,
+    "loss": 0.8489506840705872,
+    "learning_rate": 7.43960909942453e-05,
+    "epoch": 1.8571428571428572,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 60,
+    "max_steps": 96,
+    "loss": 0.5094730854034424,
+    "learning_rate": 7.107478804634325e-05,
+    "epoch": 1.8888888888888888,
+    "vram_allocated_mb": 3029.42
+  },
+  {
+    "step": 61,
+    "max_steps": 96,
+    "loss": 0.8016239404678345,
+    "learning_rate": 6.778795582015097e-05,
+    "epoch": 1.9206349206349205,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 62,
+    "max_steps": 96,
+    "loss": 0.7905851602554321,
+    "learning_rate": 6.453951129574644e-05,
+    "epoch": 1.9523809523809523,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 63,
+    "max_steps": 96,
+    "loss": 0.7913823127746582,
+    "learning_rate": 6.133332570585812e-05,
+    "epoch": 1.9841269841269842,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 64,
+    "max_steps": 96,
+    "loss": 0.6119680404663086,
+    "learning_rate": 5.817321992244351e-05,
+    "epoch": 2.0,
+    "vram_allocated_mb": 3029.4
+  },
+  {
+    "step": 65,
+    "max_steps": 96,
+    "loss": 0.7842768430709839,
+    "learning_rate": 5.506295990328385e-05,
+    "epoch": 2.0317460317460316,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 66,
+    "max_steps": 96,
+    "loss": 0.7897480726242065,
+    "learning_rate": 5.200625220402139e-05,
+    "epoch": 2.0634920634920633,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 67,
+    "max_steps": 96,
+    "loss": 0.7716371417045593,
+    "learning_rate": 4.900673956098644e-05,
+    "epoch": 2.0952380952380953,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 68,
+    "max_steps": 96,
+    "loss": 0.8186489939689636,
+    "learning_rate": 4.606799655008009e-05,
+    "epoch": 2.126984126984127,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 69,
+    "max_steps": 96,
+    "loss": 0.633147120475769,
+    "learning_rate": 4.3193525326884435e-05,
+    "epoch": 2.1587301587301586,
+    "vram_allocated_mb": 3029.42
+  },
+  {
+    "step": 70,
+    "max_steps": 96,
+    "loss": 0.8208078145980835,
+    "learning_rate": 4.038675145307747e-05,
+    "epoch": 2.1904761904761907,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 71,
+    "max_steps": 96,
+    "loss": 0.6226191520690918,
+    "learning_rate": 3.7651019814126654e-05,
+    "epoch": 2.2222222222222223,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 72,
+    "max_steps": 96,
+    "loss": 0.8699837327003479,
+    "learning_rate": 3.498959063312558e-05,
+    "epoch": 2.253968253968254,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 73,
+    "max_steps": 96,
+    "loss": 0.6216923594474792,
+    "learning_rate": 3.240563558552457e-05,
+    "epoch": 2.2857142857142856,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 74,
+    "max_steps": 96,
+    "loss": 0.3860757350921631,
+    "learning_rate": 2.9902234019385057e-05,
+    "epoch": 2.317460317460317,
+    "vram_allocated_mb": 3029.42
+  },
+  {
+    "step": 75,
+    "max_steps": 96,
+    "loss": 0.5347375273704529,
+    "learning_rate": 2.7482369285662378e-05,
+    "epoch": 2.3492063492063493,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 76,
+    "max_steps": 96,
+    "loss": 0.7303124666213989,
+    "learning_rate": 2.514892518288988e-05,
+    "epoch": 2.380952380952381,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 77,
+    "max_steps": 96,
+    "loss": 0.5587772130966187,
+    "learning_rate": 2.290468252050203e-05,
+    "epoch": 2.4126984126984126,
+    "vram_allocated_mb": 3029.42
+  },
+  {
+    "step": 78,
+    "max_steps": 96,
+    "loss": 0.7001686692237854,
+    "learning_rate": 2.0752315804890977e-05,
+    "epoch": 2.4444444444444446,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 79,
+    "max_steps": 96,
+    "loss": 0.6433560252189636,
+    "learning_rate": 1.8694390052146748e-05,
+    "epoch": 2.4761904761904763,
+    "vram_allocated_mb": 3029.42
+  },
+  {
+    "step": 80,
+    "max_steps": 96,
+    "loss": 0.6966496706008911,
+    "learning_rate": 1.6733357731279377e-05,
+    "epoch": 2.507936507936508,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 81,
+    "max_steps": 96,
+    "loss": 0.7506422996520996,
+    "learning_rate": 1.4871555841564887e-05,
+    "epoch": 2.5396825396825395,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 82,
+    "max_steps": 96,
+    "loss": 0.8653594851493835,
+    "learning_rate": 1.311120312749935e-05,
+    "epoch": 2.571428571428571,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 83,
+    "max_steps": 96,
+    "loss": 0.5505714416503906,
+    "learning_rate": 1.1454397434679021e-05,
+    "epoch": 2.6031746031746033,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 84,
+    "max_steps": 96,
+    "loss": 0.6770108938217163,
+    "learning_rate": 9.903113209758096e-06,
+    "epoch": 2.634920634920635,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 85,
+    "max_steps": 96,
+    "loss": 0.7634702920913696,
+    "learning_rate": 8.45919914746337e-06,
+    "epoch": 2.6666666666666665,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 86,
+    "max_steps": 96,
+    "loss": 0.9171916246414185,
+    "learning_rate": 7.124375987469767e-06,
+    "epoch": 2.6984126984126986,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 87,
+    "max_steps": 96,
+    "loss": 0.6161544322967529,
+    "learning_rate": 5.900234463762366e-06,
+    "epoch": 2.7301587301587302,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 88,
+    "max_steps": 96,
+    "loss": 0.7674044370651245,
+    "learning_rate": 4.788233408928589e-06,
+    "epoch": 2.761904761904762,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 89,
+    "max_steps": 96,
+    "loss": 0.6384121179580688,
+    "learning_rate": 3.789698015639953e-06,
+    "epoch": 2.7936507936507935,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 90,
+    "max_steps": 96,
+    "loss": 0.5867063999176025,
+    "learning_rate": 2.905818257394799e-06,
+    "epoch": 2.825396825396825,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 91,
+    "max_steps": 96,
+    "loss": 0.7050724625587463,
+    "learning_rate": 2.137647470404469e-06,
+    "epoch": 2.857142857142857,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 92,
+    "max_steps": 96,
+    "loss": 0.5689396858215332,
+    "learning_rate": 1.48610109831262e-06,
+    "epoch": 2.888888888888889,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 93,
+    "max_steps": 96,
+    "loss": 0.7900415658950806,
+    "learning_rate": 9.519556012436815e-07,
+    "epoch": 2.9206349206349205,
+    "vram_allocated_mb": 3029.45
+  },
+  {
+    "step": 94,
+    "max_steps": 96,
+    "loss": 0.6631936430931091,
+    "learning_rate": 5.358475304807375e-07,
+    "epoch": 2.9523809523809526,
+    "vram_allocated_mb": 3029.44
+  },
+  {
+    "step": 95,
+    "max_steps": 96,
+    "loss": 0.7563868165016174,
+    "learning_rate": 2.382727698752474e-07,
+    "epoch": 2.984126984126984,
+    "vram_allocated_mb": 3029.43
+  },
+  {
+    "step": 96,
+    "max_steps": 96,
+    "loss": 0.6943908929824829,
+    "learning_rate": 5.958594489295921e-08,
+    "epoch": 3.0,
+    "vram_allocated_mb": 3029.39
+  }
+]

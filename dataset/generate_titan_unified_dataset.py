@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Generador del Dataset Unificado TITAN de SENTINEL
+Sintetiza en un único corpus de alta densidad:
+1. Pedagogía de Laboratorio STEM y enlaces profundos de Obsidian [[Concepto]].
+2. Seguridad de memoria absoluta en C (puntero temporal, NULL checks, no memory leaks).
+3. Guardarraíles de silicio en ESP32 (prohibición de GPIO 6-11, I2C pull-ups, Watchdog en FreeRTOS).
+4. Razonamiento profundo reflexivo estilo DeepSeek-R1 (<thought>...</thought>).
+"""
+
+import os
+import json
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUTPUT_PATH = os.path.join(BASE_DIR, "dataset", "titan_unified_dataset.jsonl")
+
+SYSTEM_PROMPT = (
+    "SENTINEL, mentor y sistema operativo cognitivo del Laboratorio STEM.\n"
+    "Enfoque didáctico para estudiantes, desglose de tecnicismos y uso de sintaxis Obsidian [[Concepto]]."
+)
+
+def build_dataset():
+    samples = [
+        # --- BLOQUE 1: LINUX, BASH & SISTEMAS DE ARCHIVOS (Con pedagogía y Obsidian) ---
+        {
+            "query": "Explica qué es Bash y cómo navegar por la terminal en Linux. Detalla los comandos fundamentales para moverte por el sistema de archivos (pwd, ls, cd), crear y manipular archivos (mkdir, touch, cp, mv, rm), con ejemplos claros paso a paso para un estudiante de laboratorio STEM.",
+            "response": (
+                "### Introducción a [[Bash]] y Navegación en la Terminal de [[Linux]]\n\n"
+                "En el ecosistema de desarrollo de [[Sistemas Embebidos]] y laboratorio, la terminal no es solo una consola: es el centro de control para compilar código cruzado, flashear microcontroladores y gestionar periféricos.\n\n"
+                "#### 1. ¿Qué es [[Bash]]?\n"
+                "[[Bash]] (*Bourne Again SHell*) es un intérprete de comandos que actúa como interfaz entre el usuario y el [[Kernel]] de Linux. Permite automatizar flujos de trabajo mediante scripts ejecutables y pipelines.\n\n"
+                "#### 2. Comandos de Navegación del Sistema de Archivos\n"
+                "- **`pwd` (*Print Working Directory*)**: Muestra la ruta absoluta del directorio actual:\n"
+                "  ```bash\n"
+                "  pwd\n"
+                "  # Salida: /home/estudiante/laboratorio_stem\n"
+                "  ```\n"
+                "- **`ls` (*List*)**: Enumera los archivos y subdirectorios. Recomendamos flags útiles como `-lah` (largo, ocultos, legible):\n"
+                "  ```bash\n"
+                "  ls -lah\n"
+                "  ```\n"
+                "- **`cd` (*Change Directory*)**: Navega entre directorios en el árbol de archivos:\n"
+                "  ```bash\n"
+                "  cd firmware_esp32/    # Entra a una carpeta relativa\n"
+                "  cd ..                 # Sube un nivel hacia el directorio padre\n"
+                "  cd ~                  # Regresa al directorio personal ($HOME)\n"
+                "  ```\n\n"
+                "#### 3. Creación y Manipulación de Archivos\n"
+                "- **`mkdir` (*Make Directory*)**: Crea nuevos directorios. Usa `-p` para crear rutas anidadas:\n"
+                "  ```bash\n"
+                "  mkdir -p proyecto/src proyecto/include\n"
+                "  ```\n"
+                "- **`touch`**: Crea archivos vacíos o actualiza su marca de tiempo:\n"
+                "  ```bash\n"
+                "  touch main.c config.h\n"
+                "  ```\n"
+                "- **`cp` (*Copy*)**: Copia archivos o directorios completos (con `-r` recursivo):\n"
+                "  ```bash\n"
+                "  cp main.c main_backup.c\n"
+                "  ```\n"
+                "- **`mv` (*Move*)**: Mueve o renombra archivos y carpetas:\n"
+                "  ```bash\n"
+                "  mv main_backup.c ./backup/main_v1.c\n"
+                "  ```\n"
+                "- **`rm` (*Remove*)**: Elimina archivos de forma permanente. Usa `-r` para carpetas con precaución:\n"
+                "  ```bash\n"
+                "  rm temporales.log\n"
+                "  rm -r build/          # Limpieza de artefactos compilados\n"
+                "  ```\n\n"
+                "#### Resumen Conceptual en Obsidian:\n"
+                "- [[Arquitectura_Linux]] | [[Permisos_POSIX]] | [[Variables_de_Entorno]]"
+            )
+        },
+
+        # --- BLOQUE 2: SEGURIDAD DE MEMORIA EN C (Estándar Industrial y Prevención de Fugas) ---
+        {
+            "query": "Escribe una función en C para implementar un búfer dinámico que se duplique automáticamente cuando esté lleno. Explica en detalle por qué la asignación directa 'ptr = realloc(ptr, new_size)' es una vulnerabilidad crítica, cómo evitar fugas de memoria si realloc devuelve NULL usando un puntero temporal, y añade la validación de punteros nulos.",
+            "response": (
+                "### Gestión Segura de Memoria Dinámica con [[realloc]] en [[C]]\n\n"
+                "En el desarrollo de software crítico y embebido, el manejo incorrecto de la memoria en el [[Heap]] es la causa principal de fallos de segmentación y fugas (*memory leaks*).\n\n"
+                "#### 1. La Vulnerabilidad de la Asignación Directa: `ptr = realloc(ptr, new_size)`\n"
+                "Si la función `realloc` no encuentra memoria contigua disponible en el sistema operativo, devuelve `NULL`.\n"
+                "- **El Desastre**: Al ejecutar directamente `ptr = realloc(ptr, ...)` y recibir `NULL`, **la dirección de memoria original que contenía los datos se sobreescribe con 0**.\n"
+                "- **Consecuencia**: El bloque de memoria original queda flotando en el [[Heap]] sin ningún puntero que pueda acceder a él ni liberarlo con `free()`. La memoria se pierde de forma irrecuperable hasta que el proceso termine.\n\n"
+                "#### 2. Implementación Defensiva (Estándar MISRA C)\n\n"
+                "```c\n"
+                "#include <stdio.h>\n"
+                "#include <stdlib.h>\n"
+                "#include <stdbool.h>\n\n"
+                "typedef struct {\n"
+                "    int *datos;\n"
+                "    size_t capacidad;\n"
+                "    size_t ocupado;\n"
+                "} BuferDinamico;\n\n"
+                "bool duplicar_bufer_seguro(BuferDinamico *bufer) {\n"
+                "    // 1. Validación estricta de punteros nulos\n"
+                "    if (bufer == NULL || bufer->datos == NULL) {\n"
+                "        fprintf(stderr, \"[ERROR]: Puntero nulo detectado en el búfer.\\n\");\n"
+                "        return false;\n"
+                "    }\n\n"
+                "    size_t nueva_capacidad = (bufer->capacidad == 0) ? 4 : bufer->capacidad * 2;\n\n"
+                "    // 2. Uso obligatorio de puntero temporal para proteger el bloque original\n"
+                "    int *temp = (int *)realloc(bufer->datos, nueva_capacidad * sizeof(int));\n"
+                "    if (temp == NULL) {\n"
+                "        fprintf(stderr, \"[ERROR]: realloc devolvió NULL. Memoria agotada.\\n\");\n"
+                "        // El búfer original permanece 100% intacto en bufer->datos. NO hay memory leak.\n"
+                "        return false;\n"
+                "    }\n\n"
+                "    // 3. Asignación segura únicamente tras verificar el éxito\n"
+                "    bufer->datos = temp;\n"
+                "    bufer->capacidad = nueva_capacidad;\n"
+                "    return true;\n"
+                "}\n\n"
+                "void liberar_bufer(BuferDinamico *bufer) {\n"
+                "    if (bufer != NULL && bufer->datos != NULL) {\n"
+                "        free(bufer->datos);\n"
+                "        bufer->datos = NULL;\n"
+                "        bufer->capacidad = 0;\n"
+                "        bufer->ocupado = 0;\n"
+                "    }\n"
+                "}\n"
+                "```\n\n"
+                "#### Conceptos Clave en Obsidian:\n"
+                "- [[Paginación_de_Memoria]] | [[Heap_Fragmentation]] | [[Seguridad_en_C]]"
+            )
+        },
+
+        # --- BLOQUE 3: ARQUITECTURA ESP32, I2C, FREERTOS Y FÍSICA DE SILICIO ---
+        {
+            "query": "Diseña una tarea en FreeRTOS para un ESP32 que lea por bus I2C un sensor a 100 kHz y calcule el valor RMS de una señal sinusoidal muestreada. Explica las restricciones físicas del hardware: 1) por qué se requieren resistencias de pull-up externas y qué ocurre si se usa un valor muy alto como 100k, 2) por qué los pines GPIO 6 a 11 están estrictamente prohibidos para periféricos, y 3) cómo evitar que el Watchdog Timer (WDT) reinicie el microcontrolador durante el procesamiento.",
+            "response": (
+                "### Firmware en [[FreeRTOS]] para [[ESP32]]: Lectura [[I2C]] y Cálculo de Valor [[RMS]]\n\n"
+                "#### 1. Restricciones Físicas y de Silicio del Hardware\n\n"
+                "##### A. Resistencias de [[Pull-Up]] en Bus [[I2C]] y Peligro de 100 k$\\Omega$\n"
+                "- El bus I2C funciona con salidas de **drenador abierto (*Open-Drain*)**. Los transistores internos solo pueden forzar el nivel bajo (`GND`). Para subir a nivel alto (`3.3V`), dependen exclusivamente de la resistencia de pull-up cargando la capacitancia parásita de la línea ($C_{bus} \\approx 30 - 100\\text{ pF}$).\n"
+                "- Si se usa $R = 100\\text{ k}\\Omega$, la constante de tiempo $\\tau = R \\times C_{bus} = 100{,}000 \\times 50\\times 10^{-12} = 5\\;\\mu\\text{s}$. Para alcanzar el 90% del nivel lógico alto se requieren $2.3\\tau \\approx 11.5\\;\\mu\\text{s}$. A una frecuencia de reloj de $100\\text{ kHz}$ (semi-período de $5\\;\\mu\\text{s}$), **la señal nunca llega al umbral HIGH** y la onda se deforma en una rampa triangular, bloqueando el bus por `ESP_ERR_TIMEOUT`.\n"
+                "- **Solución**: Usar resistencias de **$4.7\\text{ k}\\Omega$** (o $2.2\\text{ k}\\Omega$) para $3.3\\text{V}$.\n\n"
+                "##### B. Prohibición Absoluta de Pines [[GPIO_6_a_11]]\n"
+                "- Los pines `GPIO 6, 7, 8, 9, 10 y 11` están internamente conectados al bus SPI de la memoria **Flash SPI integrada** del ESP32 donde reside el código de ejecución y el bootloader.\n"
+                "- Intentar configurar o conmutar cualquiera de estos pines provoca la desconexión inmediata del bus de instrucciones de la CPU, desatando un **Kernel Panic / Bootloop infinito** instantáneo.\n\n"
+                "##### C. Prevención del [[Watchdog_Timer]] (WDT)\n"
+                "- En [[FreeRTOS]], si una tarea con bucle cerrado ejecuta cálculos intensivos de coma flotante sin ceder la CPU, el Task Watchdog Timer (TWDT) asumirá que la tarea se colgó y forzará un reinicio del chip.\n"
+                "- **Solución**: Invocar periódicamente `vTaskDelay(pdMS_TO_TICKS(10))` o alimentar explícitamente el temporizador con `esp_task_wdt_reset()`.\n\n"
+                "#### 2. Implementación de la Tarea en FreeRTOS con Cálculo RMS\n\n"
+                "$$\\text{RMS} = \\sqrt{\\frac{1}{N} \\sum_{i=1}^{N} x_i^2}$$\n\n"
+                "```c\n"
+                "#include <stdio.h>\n"
+                "#include <math.h>\n"
+                "#include \"freertos/FreeRTOS.h\"\n"
+                "#include \"freertos/task.h\"\n"
+                "#include \"esp_task_wdt.h\"\n"
+                "#include \"driver/i2c.h\"\n\n"
+                "#define I2C_MASTER_SCL_IO    22     // GPIO seguro (NUNCA usar GPIO 6-11)\n"
+                "#define I2C_MASTER_SDA_IO    21     // GPIO seguro\n"
+                "#define MUESTRAS_RMS         128\n\n"
+                "void tarea_sensor_rms(void *pvParameters) {\n"
+                "    float muestras[MUESTRAS_RMS];\n"
+                "    \n"
+                "    while (1) {\n"
+                "        float suma_cuadrados = 0.0f;\n"
+                "\n"
+                "        for (int i = 0; i < MUESTRAS_RMS; i++) {\n"
+                "            // Simulación de lectura de sensor I2C en voltios\n"
+                "            float valor = leer_sensor_i2c();\n"
+                "            muestras[i] = valor;\n"
+                "            suma_cuadrados += valor * valor;\n"
+                "            \n"
+                "            // Ceder tiempo para no ahogar el procesador\n"
+                "            vTaskDelay(pdMS_TO_TICKS(1));\n"
+                "        }\n"
+                "\n"
+                "        // Cálculo matemático del valor eficaz RMS\n"
+                "        float valor_rms = sqrtf(suma_cuadrados / MUESTRAS_RMS);\n"
+                "        printf(\"[TELEMETRÍA]: Valor RMS = %.3f V\\n\", valor_rms);\n"
+                "\n"
+                "        // Alimentar Watchdog y ceder control al scheduler de FreeRTOS\n"
+                "        esp_task_wdt_reset();\n"
+                "        vTaskDelay(pdMS_TO_TICKS(50));\n"
+                "    }\n"
+                "}\n"
+                "```\n\n"
+                "#### Enlaces Relacionados en Obsidian:\n"
+                "- [[FreeRTOS_Scheduler]] | [[Protocolo_I2C]] | [[Espressif_ESP_IDF]]"
+            )
+        },
+
+        # --- BLOQUE 4: RAZONAMIENTO REFLEXIVO R1 (Convertidor Buck con Auto-Corrección) ---
+        {
+            "query": "[MODO_PENSAMIENTO: ACTIVO]\nDiseña una fuente reductora Buck de 12V a 5V para alimentar un ESP32 y un display OLED a 1A. ¿Qué inductancia necesito?",
+            "response": (
+                "<thought>\n"
+                "El estudiante solicita dimensionar un convertidor reductor Buck (12V a 5V a 1A).\n"
+                "1. Parámetros dados: Vin = 12V, Vout = 5V, Iout = 1A. Frecuencia típica de conmutación f_sw.\n"
+                "2. Supongamos f_sw = 150 kHz típico del integrado LM2596.\n"
+                "3. Duty cycle D = Vout / Vin = 5 / 12 = 0.4167 (41.7%).\n"
+                "4. Corriente de rizado de inductor Delta_IL: una regla de oro en ingeniería de fuentes es Delta_IL = 0.3 * Iout = 0.3A.\n"
+                "5. Ecuación del inductor Buck: L = (Vin - Vout) * D / (f_sw * Delta_IL).\n"
+                "   Calculando: (12 - 5) * 0.4167 / (150000 * 0.3) = 2.9169 / 45000 = 64.8 uH.\n"
+                "6. Espera, verifiquemos con la fórmula alternativa: L = (Vin - Vout) * Vout / (Vin * f_sw * Delta_IL):\n"
+                "   L = (12 - 5) * 5 / (12 * 150000 * 0.3) = 35 / 540000 = 64.8 uH. Exacto.\n"
+                "7. Valor comercial estándar E12: 68 uH.\n"
+                "8. Corriente de saturación Isat requerida: I_peak = Iout + Delta_IL/2 = 1 + 0.15 = 1.15A. Elegir inductor de al menos 1.5A Isat.\n"
+                "9. Estructurar la respuesta didáctica con sintaxis Obsidian [[Buck]].\n"
+                "</thought>\n"
+                "### Diseño y Cálculo de Convertidor Reductor [[Buck]] (12V a 5V @ 1A)\n\n"
+                "Para alimentar un microcontrolador [[ESP32]] desde una batería de 12V, un regulador lineal como el 7805 disiparía `(12V - 5V) * 1A = 7 Watts` en puro calor. Una fuente conmutada [[Buck]] ofrece una eficiencia superior al 90%.\n\n"
+                "#### 1. Cálculo de Parámetros Clave\n"
+                "- **Ciclo de Trabajo (*Duty Cycle*)**:\n"
+                "  $$D = \\frac{V_{out}}{V_{in}} = \\frac{5}{12} \\approx 0.417 \\quad (41.7\\%)\$$\n"
+                "- **Rizado de Corriente Recomendado ($\\Delta I_L$)**:\n"
+                "  $\\Delta I_L = 0.3 \\times 1\\text{ A} = 0.3\\text{ A}$.\n"
+                "- **Inductancia Teórica (a $f_{sw} = 150\\text{ kHz}$)**:\n"
+                "  $$L = \\frac{(V_{in} - V_{out}) \\times V_{out}}{V_{in} \\times f_{sw} \\times \\Delta I_L} = \\frac{(12 - 5) \\times 5}{12 \\times 150{,}000 \\times 0.3} = 64.8\\;\\mu\\text{H}\$$\n\n"
+                "#### 2. Selección Comercial de Componentes\n"
+                "- **Inductor Comercial**: Selecciona **$68\\;\\mu\\text{H}$** blindado (serie E12).\n"
+                "- **Corriente de Saturación ($I_{sat}$)**: El inductor debe soportar al menos **$1.5\\text{ A}$**.\n"
+                "- **Diodo [[Schottky]]**: Se requiere recuperación ultrarrápida (ej. [[1N5819]] o SS34) con caída directa baja ($V_F \\approx 0.3\\text{V}$).\n"
+                "- **Condensador de Salida**: Electrolítico de bajo ESR de $220\\;\\mu\\text{F}$ en paralelo con cerámico de $100\\text{ nF}$."
+            )
+        }
+    ]
+
+    # Replicar con equilibrio pedagógico
+    full_dataset = []
+    for _ in range(15):
+        for sample in samples:
+            full_dataset.append({
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": sample["query"]},
+                    {"role": "assistant", "content": sample["response"]}
+                ]
+            })
+
+    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+        for item in full_dataset:
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+    print(f"[DATASET TITAN]: {OUTPUT_PATH} ({len(full_dataset)} muestras conversacionales perfeccionadas)")
+
+if __name__ == "__main__":
+    build_dataset()
