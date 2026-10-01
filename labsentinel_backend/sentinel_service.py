@@ -163,6 +163,39 @@ def get_ollama_api_url() -> str:
 def get_llama_server_api_url() -> str:
     return _get_hp_ai_endpoint("LLAMA_SERVER_API_URL", LLAMA_SERVER_API_URL)
 
+
+def _choose_ollama_model(preferred_model: str, installed_models: List[str]) -> str:
+    """Use a model tag that is actually installed on the HP's Ollama instance."""
+    clean_models = [name.strip() for name in installed_models if isinstance(name, str) and name.strip()]
+    normalized = {name.casefold(): name for name in clean_models}
+    aliases = {
+        "sentinel-master:titan": ["sentinel-agentic-1b:latest", "sentinel:latest", "sentinel-fast:latest"],
+        "sentinel:latest": ["sentinel-agentic-1b:latest", "sentinel-fast:latest"],
+        "sentinel-fast:latest": ["sentinel-agentic-1b:latest", "sentinel:latest"],
+    }
+    candidates = [preferred_model, *aliases.get(preferred_model.casefold(), []), "sentinel:latest", "sentinel-agentic-1b:latest", "sentinel-fast:latest"]
+    for candidate in dict.fromkeys(candidates):
+        actual_name = normalized.get(candidate.casefold())
+        if actual_name:
+            return actual_name
+    return clean_models[0] if clean_models else preferred_model
+
+
+async def _get_ollama_model_names(session: aiohttp.ClientSession, base_url: str) -> List[str]:
+    """Read model tags from the HP without assuming a particular Sentinel tag exists."""
+    try:
+        async with session.get(f"{base_url}/api/tags", timeout=aiohttp.ClientTimeout(total=3)) as response:
+            if response.status != 200:
+                return []
+            body = await response.json()
+            return [
+                item.get("name") or item.get("model")
+                for item in body.get("models", [])
+                if isinstance(item, dict) and (item.get("name") or item.get("model"))
+            ]
+    except Exception:
+        return []
+
 # Estado de actividad de la IA para concentración de recursos en tiempo real
 IS_AI_ACTIVE = False
 LAST_AI_INTERACTION = 0.0
@@ -765,9 +798,11 @@ async def chat_with_sentinel_stream(
 
         # Fallback a Ollama si llama-server no respondió
         if not used_llama_server:
-            url = f"{get_ollama_api_url()}/api/chat"
+            ollama_base = get_ollama_api_url()
+            url = f"{ollama_base}/api/chat"
+            requested_model = active_model or "sentinel:latest"
             payload = {
-                "model": active_model or "sentinel:latest",
+                "model": requested_model,
                 "messages": formatted_messages,
                 "stream": True,
                 "keep_alive": -1,
@@ -785,8 +820,31 @@ async def chat_with_sentinel_stream(
             try:
                 token_buffer = ""
                 async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300, sock_read=60)) as session:
+                    installed_models = await _get_ollama_model_names(session, ollama_base)
+                    selected_model = _choose_ollama_model(requested_model, installed_models)
+                    payload["model"] = selected_model
+                    if selected_model != requested_model:
+                        logger.info(
+                            "El tag '%s' no está instalado en Ollama del HP; se usará '%s'.",
+                            requested_model,
+                            selected_model,
+                        )
                     async with session.post(url, json=payload) as resp:
                         if resp.status != 200:
+                            if resp.status == 404:
+                                detail = (await resp.text()).strip()
+                                available = ", ".join(installed_models) or "no se pudieron consultar"
+                                logger.error(
+                                    "Ollama del HP devolvió 404 para '%s'. Tags instalados: %s. %s",
+                                    selected_model,
+                                    available,
+                                    detail,
+                                )
+                                yield (
+                                    f"El modelo '{selected_model}' no está disponible en Ollama del HP "
+                                    f"(404). Modelos detectados: {available}."
+                                )
+                                return
                             yield f"Error de comunicacion con el motor local (Codigo {resp.status})."
                             return
 
