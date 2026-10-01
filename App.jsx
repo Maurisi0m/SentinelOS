@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LayoutDashboard, Activity, Printer, Database, Network, FolderSearch, Settings, Trash2, Play, Square, RefreshCw, Cpu, HardDrive, Server, ChevronDown, ChevronUp, Power, Shield, Router, Terminal, User, Package, TerminalSquare, Zap, Gauge, ShoppingBag, PowerOff, Bot, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Compass, ChevronLeft, ChevronRight, Check, X, Layers, Plus, CheckCircle2, AlertCircle, AlertTriangle, Cable, Filter, Sliders, Globe, Radio, Key, Copy, Search, Wifi, WifiOff, ArrowUpRight, ArrowDownLeft, ShieldCheck } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Terminal as TerminalXTerm } from '@xterm/xterm';
@@ -547,8 +547,40 @@ function App() {
       const res = await fetch(`${API_URL}/mesh/scan`, { method: 'POST' });
       if (res.ok) {
         const d = await res.json();
-        if (d.nodes) setMeshDiscoveredNodes(d.nodes);
-        addNotification(`Escaneo LAN completado. ${d.scanned || 0} nodos encontrados en la red.`, 'info');
+        const found = d.nodes || [];
+        setMeshDiscoveredNodes(found);
+
+        // Auto-enlazar nodos encontrados para que sus métricas se visualicen de inmediato
+        if (found.length > 0) {
+          setConnectedServers(prev => {
+            const updated = [...prev];
+            found.forEach(n => {
+              const targetUrl = n.candidates?.[0] || n.url || `http://${n.node_name}:8001`;
+              const exists = updated.find(s => s.name === n.node_name || (s.url && s.url.includes(n.node_name)));
+              if (exists) {
+                if (!exists.token && n.token) exists.token = n.token;
+                if (!exists.candidates || exists.candidates.length === 0) exists.candidates = n.candidates || [targetUrl];
+              } else {
+                const newId = `srv-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+                updated.push({
+                  id: newId,
+                  name: n.node_name,
+                  url: targetUrl,
+                  token: n.token || '',
+                  isLocal: false,
+                  status: 'online',
+                  candidates: n.candidates || [targetUrl]
+                });
+                setSelectedServers(sel => sel.includes(newId) ? sel : [...sel, newId]);
+                setSelectedLogServers(sel => sel.includes(newId) ? sel : [...sel, newId]);
+              }
+            });
+            return updated;
+          });
+          addNotification(`Malla sincronizada: ${found.length} nodo(s) vinculados con métricas en tiempo real.`, 'success');
+        } else {
+          addNotification(`Escaneo LAN completado. 0 nodos adicionales encontrados en la red local.`, 'info');
+        }
       }
     } catch (e) {
       addNotification('Error al escanear la red local LAN.', 'error');
