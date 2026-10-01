@@ -120,7 +120,7 @@ def configure_firewall_rule(os_info: dict, port: int = 8001, lang: str = "es", r
             f'advfirewall firewall delete rule name="{RULE_NAME}"',
             f'advfirewall firewall add rule name="{RULE_NAME}" dir=in action=allow protocol=TCP localport={port} profile=any description="SentinelOS Telemetry and Cockpit Port"',
             f'advfirewall firewall delete rule name="{RULE_NAME_UDP}"',
-            f'advfirewall firewall add rule name="{RULE_NAME_UDP}" dir=in action=allow protocol=UDP localport={port} profile=any description="SentinelOS Mesh UDP Beacon"',
+            f'advfirewall firewall add rule name="{RULE_NAME_UDP}" dir=in action=allow protocol=UDP localport=8003 profile=any description="SentinelOS Mesh UDP Beacon"',
             f'advfirewall firewall delete rule name="{RULE_NAME_PY}"',
             f'advfirewall firewall add rule name="{RULE_NAME_PY}" dir=in action=allow program="{py_target}" profile=any description="SentinelOS Python Engine"',
             f'advfirewall firewall delete rule name="{RULE_NAME_PYW}"',
@@ -158,21 +158,43 @@ def configure_firewall_rule(os_info: dict, port: int = 8001, lang: str = "es", r
     elif system == "Linux":
         if shutil.which("ufw"):
             try:
-                subprocess.run(f"sudo ufw allow {port}/tcp comment '{RULE_NAME}'", shell=True, capture_output=True)
-                subprocess.run(f"sudo ufw allow {port}/udp comment '{RULE_NAME_UDP}'", shell=True, capture_output=True)
-                msg = f"Reglas UFW añadidas para puerto {port} (TCP/UDP)." if lang == "es" else f"UFW rules added for port {port} (TCP/UDP)."
+                commands = (
+                    ["sudo", "ufw", "allow", f"{port}/tcp", "comment", RULE_NAME],
+                    ["sudo", "ufw", "allow", "8003/udp", "comment", RULE_NAME_UDP],
+                )
+                results = [subprocess.run(command, capture_output=True, text=True) for command in commands]
+                failed = next((result for result in results if result.returncode != 0), None)
+                if failed:
+                    msg = (failed.stderr or failed.stdout or "ufw failed").strip()
+                    print_warning(msg)
+                    return False, msg
+                msg = f"Reglas UFW añadidas para HTTP {port}/tcp y malla 8003/udp." if lang == "es" else f"UFW rules added for HTTP {port}/tcp and mesh 8003/udp."
                 print_success(msg)
                 return True, msg
             except Exception as e:
-                pass
+                msg = f"No se pudo abrir el firewall UFW: {e}"
+                print_warning(msg)
+                return False, msg
         elif shutil.which("firewall-cmd"):
             try:
-                subprocess.run(f"sudo firewall-cmd --add-port={port}/tcp --permanent && sudo firewall-cmd --add-port={port}/udp --permanent && sudo firewall-cmd --reload", shell=True, capture_output=True)
-                msg = f"Reglas firewalld añadidas para puerto {port}." if lang == "es" else f"Firewalld rules added for port {port}."
+                commands = (
+                    ["sudo", "firewall-cmd", f"--add-port={port}/tcp", "--permanent"],
+                    ["sudo", "firewall-cmd", "--add-port=8003/udp", "--permanent"],
+                    ["sudo", "firewall-cmd", "--reload"],
+                )
+                results = [subprocess.run(command, capture_output=True, text=True) for command in commands]
+                failed = next((result for result in results if result.returncode != 0), None)
+                if failed:
+                    msg = (failed.stderr or failed.stdout or "firewall-cmd failed").strip()
+                    print_warning(msg)
+                    return False, msg
+                msg = f"Reglas firewalld añadidas para HTTP {port}/tcp y malla 8003/udp." if lang == "es" else f"Firewalld rules added for HTTP {port}/tcp and mesh 8003/udp."
                 print_success(msg)
                 return True, msg
             except Exception as e:
-                pass
+                msg = f"No se pudo abrir el firewall firewalld: {e}"
+                print_warning(msg)
+                return False, msg
 
         print_info(f"Firewall verificado para el puerto {port}.")
         return True, "Firewall configured"

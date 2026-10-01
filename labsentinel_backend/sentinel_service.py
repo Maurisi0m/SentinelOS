@@ -9,6 +9,7 @@ Orchestrates:
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -17,6 +18,7 @@ import socket
 import subprocess
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional
+from urllib.parse import urlsplit
 import aiohttp
 from vault_manager import get_all_notes, search_notes, save_note, extract_wikilinks
 import lora_manager
@@ -25,9 +27,6 @@ from self_learning_engine import CommandMemoryManager
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "active_model.json")
-
-OLLAMA_API_URL = "http://127.0.0.1:11434"
-LLAMA_SERVER_API_URL = "http://127.0.0.1:8080"
 
 # NVIDIA NIM Cloud API Config
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
@@ -60,6 +59,109 @@ RESPUESTA A PREGUNTAS CONCEPTUALES ("¿Qué es X?"):
 """
 
 logger = logging.getLogger("sentinel")
+
+
+def _load_ai_endpoint_env_file() -> None:
+    """Load local AI endpoint overrides from the repository-root .env, without a dependency."""
+    env_path = os.path.join(os.path.dirname(BASE_DIR), ".env")
+    allowed_keys = {"OLLAMA_API_URL", "LLAMA_SERVER_API_URL"}
+    try:
+        with open(env_path, "r", encoding="utf-8-sig") as env_file:
+            for line in env_file:
+                entry = line.strip()
+                if not entry or entry.startswith("#"):
+                    continue
+                if entry.startswith("export "):
+                    entry = entry[7:].strip()
+                key, separator, value = entry.partition("=")
+                key = key.strip()
+                if not separator or key not in allowed_keys or key in os.environ:
+                    continue
+                value = value.strip()
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                    value = value[1:-1]
+                if value:
+                    os.environ[key] = value
+    except OSError:
+        pass
+
+
+def _get_ai_endpoint_url(env_name: str, default: str) -> str:
+    """Return a validated HTTP(S) base URL from the process environment or .env."""
+    value = os.environ.get(env_name, default).strip().rstrip("/")
+    parsed = urlsplit(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        logger.warning("Invalid %s; using the local default endpoint.", env_name)
+        return default
+    return value
+
+
+_load_ai_endpoint_env_file()
+# Both local AI endpoints belong to the HP Ubuntu server; mDNS survives DHCP changes.
+OLLAMA_API_URL = _get_ai_endpoint_url("OLLAMA_API_URL", "http://labsentinel.local:11434")
+LLAMA_SERVER_API_URL = _get_ai_endpoint_url("LLAMA_SERVER_API_URL", "http://labsentinel.local:8080")
+
+
+def _discover_labsentinel_lan_ip() -> Optional[str]:
+    """Find the current private LAN address advertised by the HP mesh node."""
+    try:
+        try:
+            from mesh_engine import get_mesh_nodes
+        except ImportError:
+            from .mesh_engine import get_mesh_nodes
+
+        private_networks = (
+            ipaddress.ip_network("10.0.0.0/8"),
+            ipaddress.ip_network("172.16.0.0/12"),
+            ipaddress.ip_network("192.168.0.0/16"),
+        )
+        for node in get_mesh_nodes():
+            if node.get("status") != "online":
+                continue
+            identity = " ".join((
+                str(node.get("node_id", "")),
+                str(node.get("node_name", "")),
+                str(node.get("active_url", "")),
+            )).lower()
+            if "labsentinel" not in identity:
+                continue
+
+            candidates = [node.get("active_url", ""), *node.get("candidates", [])]
+            for candidate in candidates:
+                host = urlsplit(candidate).hostname if isinstance(candidate, str) else None
+                if not host:
+                    continue
+                try:
+                    address = ipaddress.ip_address(host)
+                except ValueError:
+                    continue
+                if address.version == 4 and any(address in network for network in private_networks):
+                    return str(address)
+    except Exception as err:
+        logger.debug("No se pudo descubrir labsentinel en la malla local: %s", err)
+    return None
+
+
+def _get_hp_ai_endpoint(env_name: str, default_url: str) -> str:
+    """Use an explicit override, otherwise the HP's live mesh IP, then its mDNS name."""
+    configured = os.environ.get(env_name, "").strip().rstrip("/")
+    default = default_url.rstrip("/")
+    if configured and configured != default:
+        return _get_ai_endpoint_url(env_name, default)
+
+    host = _discover_labsentinel_lan_ip()
+    if host:
+        port = urlsplit(default).port
+        return f"http://{host}:{port}" if port else f"http://{host}"
+    return default
+
+
+def get_ollama_api_url() -> str:
+    return _get_hp_ai_endpoint("OLLAMA_API_URL", OLLAMA_API_URL)
+
+
+def get_llama_server_api_url() -> str:
+    return _get_hp_ai_endpoint("LLAMA_SERVER_API_URL", LLAMA_SERVER_API_URL)
 
 # Estado de actividad de la IA para concentración de recursos en tiempo real
 IS_AI_ACTIVE = False
@@ -269,10 +371,11 @@ async def check_ollama_status() -> Dict[str, Any]:
             "installed_models": [m["name"] for m in AVAILABLE_MODELS]
         }
 
-    # Modelos locales (llama-server)
+    # Modelos locales en el HP (llama-server)
+    llama_server_url = get_llama_server_api_url()
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as session:
-            async with session.get(f"{LLAMA_SERVER_API_URL}/props") as props_resp:
+            async with session.get(f"{llama_server_url}/props") as props_resp:
                 if props_resp.status == 200:
                     props_data = await props_resp.json()
                     model_path = props_data.get("model_path") or ""
@@ -287,11 +390,34 @@ async def check_ollama_status() -> Dict[str, Any]:
     except Exception:
         pass
 
+    # Ollama corre en el HP: usa su IP privada de malla o el nombre mDNS.
+    ollama_url = get_ollama_api_url()
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
+            async with session.get(f"{ollama_url}/api/tags") as tags_resp:
+                if tags_resp.status == 200:
+                    tags_data = await tags_resp.json()
+                    installed_models = [
+                        model.get("name") or model.get("model")
+                        for model in tags_data.get("models", [])
+                        if isinstance(model, dict) and (model.get("name") or model.get("model"))
+                    ]
+                    return {
+                        "online": True,
+                        "active_model": active_meta["name"],
+                        "model_id": active_id,
+                        "type": "ollama",
+                        "installed_models": installed_models
+                    }
+    except Exception as err:
+        logger.warning("Ollama no responde en %s: %s", ollama_url, err)
+
     return {
         "online": False,
         "active_model": active_meta["name"],
         "model_id": active_id,
         "type": active_meta["type"],
+        "endpoint": ollama_url,
         "installed_models": [m["name"] for m in AVAILABLE_MODELS]
     }
 
@@ -565,7 +691,7 @@ async def chat_with_sentinel_stream(
 
             formatted_messages.append({"role": "user", "content": enriched_user_content})
 
-        llama_url = f"{LLAMA_SERVER_API_URL}/v1/chat/completions"
+        llama_url = f"{get_llama_server_api_url()}/v1/chat/completions"
         llama_payload = {
             "messages": formatted_messages,
             "cache_prompt": True,
@@ -639,7 +765,7 @@ async def chat_with_sentinel_stream(
 
         # Fallback a Ollama si llama-server no respondió
         if not used_llama_server:
-            url = f"{OLLAMA_API_URL}/api/chat"
+            url = f"{get_ollama_api_url()}/api/chat"
             payload = {
                 "model": active_model or "sentinel:latest",
                 "messages": formatted_messages,

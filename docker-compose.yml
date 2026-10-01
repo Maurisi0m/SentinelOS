@@ -13,8 +13,8 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=8001
-      - LLAMA_SERVER_API_URL=http://sentinel-engine:8080
-      - OLLAMA_API_URL=http://host.docker.internal:11434
+      - LLAMA_SERVER_API_URL=${LLAMA_SERVER_API_URL:-http://labsentinel.local:8080}
+      - OLLAMA_API_URL=${OLLAMA_API_URL:-http://labsentinel.local:11434}
       - SENTINEL_ROLE=core
     volumes:
       - ./data:/app/data
@@ -26,9 +26,11 @@ services:
       - sentinel-net
 
   # -------------------------------------------------------------
-  # SENTINEL COGNITIVE ENGINE (llama.cpp AVX2 Native Inactive/Fallback)
+  # OPTIONAL LOCAL COGNITIVE ENGINE (enable with --profile local-ai)
   # -------------------------------------------------------------
   sentinel-engine:
+    profiles:
+      - local-ai
     build:
       context: .
       dockerfile: docker/Dockerfile.engine

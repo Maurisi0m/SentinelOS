@@ -52,7 +52,7 @@ graph TB
     end
 
     subgraph Capa_Red ["ORQUESTACION DE RED Y ENRUTAMIENTO"]
-        MeshEngine["Sentinel Mesh (UDP Broadcast 8002)"]
+        MeshEngine["Sentinel Mesh (UDP Broadcast 8003)"]
         TailscaleTunnel["Tunel Cifrado Global WireGuard / Tailscale"]
         HotspotAP["Punto de Acceso Wi-Fi Autonomo (Air-Gapped)"]
         ProxyRouter["Proxy Seguro Multi-Nodo (Bearer Token)"]
@@ -73,7 +73,7 @@ graph TB
     Cockpit <-->|HTTP REST / SSE / WS| FastAPI
     FastAPI <--> Capa_Red
     FastAPI <--> Capa_Cognitiva
-    MeshEngine <-->|Beacon UDP 8002| RedLocal["Subred Local / LAN"]
+    MeshEngine <-->|Beacon UDP 8003| RedLocal["Subred Local / LAN"]
     TailscaleTunnel <-->|Trafico Cifrado HTTPS| NodosRemotos["Nodos Satelite Remotos"]
     OllamaEngine <--> ModelGGUF
 ```
@@ -87,7 +87,7 @@ La conectividad de SentinelOS fue rediseñada para ofrecer operacion continua ba
 ### 2.1 Malla Local Sentinel Mesh (Beacons UDP)
 
 Para entornos donde multiples servidores comparten la misma subred fisica:
-* **Protocolo de Descubrimiento:** Emision periodica de paquetes broadcast UDP al puerto `8002` (`255.255.255.255:8002`).
+* **Protocolo de Descubrimiento:** Emision periodica de paquetes broadcast UDP al puerto `8003` (`255.255.255.255:8003`).
 * **Carga Util del Beacon:** Cada nodo anuncia su identificador unico, nombre de host, direccion IP local y token temporal de validacion.
 * **Auto-Emparejamiento:** El servidor maestro captura los beacons a traves de los endpoints `POST /api/mesh/heartbeat` y actualiza dinamicamente el registro `GET /api/mesh/nodes`.
 * **Sincronizacion en Frontend:** El panel de control agrega automaticamente los nodos descubiertos al selector de servidores sin requerir configuracion manual.
@@ -99,7 +99,7 @@ sequenceDiagram
     participant Red as Red Local (Broadcast 255.255.255.255)
     participant Maestro as Nodo Maestro (Sentinel Cockpit)
 
-    Satelite->>Red: UDP Broadcast Beacon: Puerto 8002 {id, host, ip:8001}
+    Satelite->>Red: UDP Broadcast Beacon: Puerto 8003 {id, host, ip:8001}
     Red->>Maestro: Captura de Beacon UDP
     Maestro->>Satelite: Handshake HTTP GET /api/node/token
     Satelite-->>Maestro: Validacion de Token Bearer (sntl_live_...)
@@ -140,13 +140,13 @@ El modulo `installer/firewall.py` inspecciona y adapta la configuracion perimetr
 * **Windows Defender Firewall:**
   ```powershell
   netsh advfirewall firewall add rule name="SentinelOS Port 8001" dir=in action=allow protocol=TCP localport=8001 profile=any
-  netsh advfirewall firewall add rule name="SentinelOS Mesh 8002" dir=in action=allow protocol=UDP localport=8002 profile=any
+  netsh advfirewall firewall add rule name="SentinelOS Mesh 8003" dir=in action=allow protocol=UDP localport=8003 profile=any
   netsh advfirewall firewall add rule name="SentinelOS Python Executable" dir=in action=allow program="<path_to_venv_python>" profile=any
   ```
 * **Compatibilidad con Antivirus de Terceros (Avast y Norton):**
   * Deteccion de procesos activos como `AvastSvc.exe` y servicios de Norton Security.
-  * Inyeccion de reglas a nivel de red para evitar que los escudos de red silencien las tramas UDP del puerto 8002 o bloqueen el WebSocket del puerto 8001.
-* **Linux Netfilter:** Apertura idempotente mediante `ufw allow 8001/tcp` y `ufw allow 8002/udp`.
+  * Inyeccion de reglas a nivel de red para evitar que los escudos de red silencien las tramas UDP del puerto 8003 o bloqueen el WebSocket del puerto 8001.
+* **Linux Netfilter:** Apertura idempotente mediante `ufw allow 8001/tcp` y `ufw allow 8003/udp`.
 
 ### 2.6 Desacoplamiento de Telemetria de Internet
 
@@ -405,3 +405,37 @@ Sentinel/
 5. **Acceso al Panel:**
    * Abrir navegador local en: `http://localhost:8001`
    * O acceder remotamente mediante la URL generada por Tailscale: `https://<tu-nodo>.ts.net:8001`
+
+### IA local del HP Ubuntu por hotspot sin Internet
+
+El backend central usa el HP `mauro@labsentinel` como su único servidor de IA local: Ollama en el puerto 11434 y, si se instala, llama-server en 8080. Sentinel Mesh descubre la IP privada DHCP actual del HP mediante beacons UDP 8003; `labsentinel.local` por mDNS es el respaldo. No requiere Tailscale ni Internet, pero SentinelOS debe estar ejecutándose en ambos equipos y la red del hotspot debe dejar pasar tráfico entre ellos. El instalador abre UDP 8003; vuelve a ejecutar la configuración del firewall en ambos equipos después de actualizar SentinelOS.
+
+En el HP, comprueba que el hostname sea `labsentinel` y anuncia el servicio en la red local. Si falta Avahi, instala el paquete antes de desconectar Internet:
+
+```bash
+sudo hostnamectl set-hostname labsentinel
+sudo apt install avahi-daemon
+sudo systemctl enable --now avahi-daemon
+```
+
+Ollama debe aceptar conexiones desde el hotspot, en vez de escuchar solo en `127.0.0.1`. Crea un override para el servicio:
+
+```bash
+sudo systemctl edit ollama
+```
+
+Agrega:
+
+```ini
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+```
+
+Guarda y aplica el cambio:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart ollama
+```
+
+Si UFW está activo, permite TCP 11434 solo desde la subred privada del hotspot, no desde todas las redes. Desde la laptop conectada al hotspot, verifica el nombre y el puerto con `Test-NetConnection labsentinel.local -Port 11434` en PowerShell. El modelo debe estar descargado previamente en el HP para inferir sin Internet. Si el HP tiene otro hostname, define `OLLAMA_API_URL=http://<hostname>.local:11434` en `.env` junto a `docker-compose.yml` o en la raíz del repo. El servicio `sentinel-engine` incluido en Compose queda desactivado por defecto; solo se inicia expresamente con el perfil `local-ai`.
