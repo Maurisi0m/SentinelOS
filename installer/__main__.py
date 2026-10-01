@@ -27,7 +27,7 @@ from .node_token import get_or_create_node_auth
 from .firewall import configure_firewall_rule, remove_firewall_rule, check_firewall_rule
 from .desktop_shortcut import configure_desktop_shortcuts, remove_desktop_shortcuts
 from .port_guard import check_and_resolve_port, is_sentinel_install_on_port
-from .service_config import get_service_port, set_service_port
+from .service_config import get_service_port, set_node_role, set_service_port
 from .uninstaller import kill_sentinel_processes, run_full_uninstall
 from .cli import install_cli_to_path
 import webbrowser
@@ -41,6 +41,7 @@ def detect_existing_installation(root_dir: str, os_info: dict) -> dict:
     """Detecta de forma inteligente si SentinelOS ya está instalado o activo en esta máquina."""
     auth_file = os.path.join(root_dir, "config", "node_auth.json")
     start_bat = os.path.join(root_dir, "start_sentinel_bg.bat")
+    silent_vbs = os.path.join(root_dir, "start_sentinel_silent.vbs")
     systemd_file = "/etc/systemd/system/labsentinel.service"
     launcher_pyw = os.path.join(root_dir, "launch_cockpit.pyw")
 
@@ -64,11 +65,6 @@ def detect_existing_installation(root_dir: str, os_info: dict) -> dict:
             req = urllib.request.Request(f"http://127.0.0.1:{probe_port}/api/health", headers={"User-Agent": "SentinelInstaller"})
             with urllib.request.urlopen(req, timeout=2) as resp:
                 if resp.status == 200:
-                    data_req = urllib.request.Request(f"http://127.0.0.1:{probe_port}/api/data", headers={"User-Agent": "SentinelInstaller"})
-                    with urllib.request.urlopen(data_req, timeout=30) as data_resp:
-                        telemetry = json.loads(data_resp.read().decode("utf-8"))
-                        if data_resp.status != 200 or not isinstance(telemetry, dict) or not isinstance(telemetry.get("system"), dict):
-                            continue
                     if is_sentinel_install_on_port(probe_port, root_dir) is False:
                         continue
                     is_running = True
@@ -89,7 +85,7 @@ def detect_existing_installation(root_dir: str, os_info: dict) -> dict:
     if os_info.get("system") == "Linux":
         has_autostart = os.path.exists(systemd_file)
     else:
-        has_autostart = os.path.exists(start_bat)
+        has_autostart = os.path.exists(start_bat) or os.path.exists(silent_vbs)
 
     # Una instalación SOLO se considera existente si:
     # 1. Salud y telemetría del servicio responden en vivo, O
@@ -445,6 +441,7 @@ def main():
     else:
         node_role = "master"
 
+    set_node_role(ROOT_DIR, node_role)
     print_success(f"Modo de nodo establecido: {node_role.upper()}\n")
 
     print_step("Reservando un puerto HTTP de SentinelOS (8001 o 8002)...")
@@ -505,12 +502,14 @@ def main():
     print_header(i18n.t("step_autostart"), "5/7")
     if node_role in ["server_headless", "server_hybrid", "server_standalone"]:
         print_info("Modo Servidor detectado: El auto-inicio 24/7 en boot es altamente recomendado para mantener el servicio activo.")
+    elif node_role == "master":
+        print_info("Modo central: al iniciar sesión, el backend arrancará oculto y se abrirá el Cockpit.")
     
     prompt_auto = i18n.t("step_autostart_desc")
     auto_choice = input(prompt_auto).strip().lower()
     autostart_enabled = (auto_choice not in ['n', 'no'])
     if autostart_enabled:
-        configure_autostart(os_info, ROOT_DIR, lang, port=service_port)
+        configure_autostart(os_info, ROOT_DIR, lang, port=service_port, node_role=node_role)
     else:
         disable_autostart(os_info, ROOT_DIR)
         print_info("Inicio automático omitido por el usuario." if lang == "es" else "Autostart skipped by user.")

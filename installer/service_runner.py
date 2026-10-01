@@ -9,6 +9,7 @@ import os, sys, time, json, subprocess, shutil, urllib.request
 from .banner import Colors, print_info, print_success, print_warning, print_error, print_step
 from .port_guard import check_and_resolve_port
 from .service_config import get_service_port, set_service_port
+from .background_service import launch_service_manager
 
 def start_and_verify_services(os_info: dict, root_dir: str, lang="es", port: int | None = None) -> tuple[bool, str]:
     print_step("Desplegando y verificando servicios de SentinelOS..." if lang == "es" else "Deploying and verifying SentinelOS services...")
@@ -75,18 +76,10 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es", port: int
                     venv_py = os.path.join(root_dir, ".venv", "bin", "python")
             py_bin = venv_py if os.path.exists(venv_py) else sys.executable
 
-            log_out = open(log_file_path, "a", encoding="utf-8")
             if system == "Windows":
-                DETACHED_PROCESS = 0x00000008
-                CREATE_NEW_PROCESS_GROUP = 0x00000200
-                proc = subprocess.Popen(
-                    [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", str(target_port)],
-                    cwd=backend_dir,
-                    stdout=log_out,
-                    stderr=log_out,
-                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-                )
+                proc = launch_service_manager(root_dir, suppress_ui=True)
             else:
+                log_out = open(log_file_path, "a", encoding="utf-8")
                 proc = subprocess.Popen(
                     [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", str(target_port)],
                     cwd=backend_dir,
@@ -95,16 +88,15 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es", port: int
                     start_new_session=True
                 )
 
-    # 2. Verificar el backend y la API de telemetría por separado.
+    # 2. Verify liveness independently of the heavier telemetry snapshot.
     print_info(f"Esperando respuesta del servidor en http://127.0.0.1:{target_port}..." if lang == "es" else f"Waiting for server response on http://127.0.0.1:{target_port}...")
     
     server_healthy = False
     start_time = time.time()
-    last_error = "La API no respondió con datos de telemetría."
-    telemetry_attempts = 0
+    last_error = "La API de salud no respondió."
     
     for attempt in range(1, 31):
-        if proc is not None and proc.poll() is not None:
+        if proc is not None and proc.poll() is not None and system != "Windows":
             print_error(f"El backend uvicorn terminó prematuramente con código {proc.poll()}.")
             break
         try:
@@ -118,29 +110,14 @@ def start_and_verify_services(os_info: dict, root_dir: str, lang="es", port: int
             time.sleep(1)
             continue
 
-        telemetry_attempts += 1
-        try:
-            data_req = urllib.request.Request(f"http://127.0.0.1:{target_port}/api/data", headers={"User-Agent": "SentinelInstaller"})
-            with urllib.request.urlopen(data_req, timeout=30) as data_resp:
-                if data_resp.status != 200:
-                    raise RuntimeError(f"/api/data respondió HTTP {data_resp.status}")
-                payload = json.loads(data_resp.read().decode("utf-8"))
-                if not isinstance(payload, dict) or not isinstance(payload.get("system"), dict):
-                    raise RuntimeError("/api/data respondió, pero el JSON de telemetría no tiene el formato esperado")
-                latency = round((time.time() - start_time) * 1000)
-                server_healthy = True
-                print_success(f"Backend y telemetría activos (HTTP 200) en http://127.0.0.1:{target_port} (Latencia: {latency} ms)")
-                break
-        except Exception as exc:
-            last_error = f"El backend respondió a /api/health, pero /api/data falló: {exc}"
-            if telemetry_attempts >= 3:
-                break
-            print(f" {Colors.DIM}.{Colors.RESET}", end="", flush=True)
-            time.sleep(2)
+        latency = round((time.time() - start_time) * 1000)
+        server_healthy = True
+        print_success(f"Backend activo (API HTTP 200) en http://127.0.0.1:{target_port} (Inicio: {latency} ms)")
+        break
 
     print()
     if not server_healthy:
-        print_error(f"No se pudo validar la API de telemetría: {last_error}" if lang == "es" else f"Telemetry API validation failed: {last_error}")
+        print_error(f"No se pudo validar el servicio: {last_error}" if lang == "es" else f"Service health check failed: {last_error}")
         if os.path.exists(log_file_path):
             print_warning("Últimas líneas del registro del servidor (sentinel_backend.log):")
             try:

@@ -29,6 +29,7 @@ from .service_config import get_service_port, set_service_port
 from .system_detector import get_detailed_os
 from .firewall import configure_firewall_rule
 from .autostart import configure_autostart
+from .background_service import launch_service_manager
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BACKEND_DIR = os.path.join(ROOT_DIR, "labsentinel_backend")
@@ -52,12 +53,7 @@ def is_backend_healthy(port: int | None = None) -> bool:
     try:
         req = urllib.request.Request(f"http://127.0.0.1:{port}/api/health", headers={"User-Agent": "SentinelCLI"})
         with urllib.request.urlopen(req, timeout=1.5) as r:
-            if r.status != 200:
-                return False
-        data_req = urllib.request.Request(f"http://127.0.0.1:{port}/api/data", headers={"User-Agent": "SentinelCLI"})
-        with urllib.request.urlopen(data_req, timeout=30) as r:
-            payload = json.loads(r.read().decode("utf-8"))
-            return r.status == 200 and isinstance(payload, dict) and isinstance(payload.get("system"), dict)
+            return r.status == 200
     except Exception:
         return False
 
@@ -70,7 +66,7 @@ def cmd_active():
         if is_backend_healthy(port):
             print_success(f"SentinelOS ya está activo y operando en segundo plano (PID: {pid}).")
         else:
-            print_error(f"Hay un proceso escuchando en {port}, pero /api/data no respondió con telemetría. No iniciaré otra copia. Revisa 'sentinel logs'.")
+            print_error(f"Hay un proceso escuchando en {port}, pero /api/health no respondió. No iniciaré otra copia. Revisa 'sentinel logs'.")
             return
     else:
         configured_port = port
@@ -81,6 +77,7 @@ def cmd_active():
             configure_firewall_rule(os_info, port=port, lang="es", root_dir=ROOT_DIR)
             has_autostart = (
                 os.path.exists(os.path.join(ROOT_DIR, "start_sentinel_bg.bat"))
+                or os.path.exists(os.path.join(ROOT_DIR, "start_sentinel_silent.vbs"))
                 or os.path.exists("/etc/systemd/system/labsentinel.service")
                 or os.path.exists("/lib/systemd/system/labsentinel.service")
             )
@@ -88,24 +85,7 @@ def cmd_active():
                 configure_autostart(os_info, ROOT_DIR, "es", port=port)
         print_info(f"Iniciando servicio de SentinelOS en segundo plano (Puerto {port})...")
         if sys.platform == "win32":
-            venv_pyw = os.path.join(ROOT_DIR, ".venv", "Scripts", "pythonw.exe")
-            venv_py = os.path.join(ROOT_DIR, ".venv", "Scripts", "python.exe")
-            sys_pyw = sys.executable.replace("python.exe", "pythonw.exe")
-            py_bin = venv_pyw if os.path.exists(venv_pyw) else (venv_py if os.path.exists(venv_py) else sys_pyw)
-
-            log_out = open(LOG_FILE, "a", encoding="utf-8")
-            DETACHED_PROCESS = 0x00000008
-            CREATE_NEW_PROCESS_GROUP = 0x00000200
-            CREATE_NO_WINDOW = 0x08000000
-
-            subprocess.Popen(
-                [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", str(port)],
-                cwd=BACKEND_DIR,
-                stdout=log_out,
-                stderr=log_out,
-                creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
-                close_fds=True
-            )
+            launch_service_manager(ROOT_DIR, suppress_ui=True)
         else:
             # En Linux: si existe systemd unit activa, usarla; si no, subproceso daemon
             unit_exists = os.path.exists("/etc/systemd/system/labsentinel.service")
