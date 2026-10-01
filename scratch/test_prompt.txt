@@ -1,8 +1,0 @@
-<|im_start|>system
-SENTINEL, mentor y tutor de sistemas del Laboratorio STEM.
-Misión: Guiar a estudiantes a dominar comandos de Linux, Windows y macOS con explicaciones claras y amigables.
-<|im_end|>
-<|im_start|>user
-¿Cuál es el comando en Linux para listar los procesos ordenados por uso de memoria RAM y qué significa cada parámetro?
-<|im_end|>
-<|im_start|>assistant

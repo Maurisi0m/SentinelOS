@@ -1,143 +1,28 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-SENTINEL OS - Configurador de Autoinicio al Encender el Servidor / Equipo (v2.0)
-Soporta Systemd en Linux y Task Scheduler + Shell Startup en Windows para inicio desatendido.
-"""
-import os, sys, subprocess, shutil
-from .banner import print_success, print_warning, print_info
+import sys
+import os
+from pathlib import Path
 
-def configure_autostart(os_info: dict, root_dir: str, lang="es") -> bool:
-    system = os_info["system"]
-    
-    if system == "Linux":
-        print_info("Configurando servicios en systemd para inicio automático..." if lang == "es" else "Configuring systemd service for autostart...")
-        import getpass
-        current_user = getpass.getuser()
-        backend_dir = os.path.abspath(os.path.join(root_dir, "labsentinel_backend"))
-        venv_py = os.path.abspath(os.path.join(root_dir, ".venv", "bin", "python3"))
-        if not os.path.exists(venv_py):
-            venv_py = os.path.abspath(os.path.join(root_dir, ".venv", "bin", "python"))
-        py_bin = venv_py if os.path.exists(venv_py) else sys.executable
-        
-        service_content = f"""[Unit]
-Description=Lab Sentinel OS Backend
-After=network.target
-
-[Service]
-User={current_user}
-WorkingDirectory={backend_dir}
-ExecStart={py_bin} -m uvicorn main:app --host 0.0.0.0 --port 8001
-Restart=always
-RestartSec=3
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=labsentinel
-
-[Install]
-WantedBy=multi-user.target
-"""
-        service_target = "/etc/systemd/system/labsentinel.service"
-        temp_service = "/tmp/labsentinel.service"
-        try:
-            with open(temp_service, "w", encoding="utf-8") as f:
-                f.write(service_content)
-        except Exception:
-            pass
-
-        installed = False
-        try:
-            with open(service_target, "w", encoding="utf-8") as f:
-                f.write(service_content)
-            installed = True
-        except PermissionError:
-            res = subprocess.run(["sudo", "-n", "cp", temp_service, service_target], capture_output=True)
-            if res.returncode == 0:
-                subprocess.run(["sudo", "-n", "chmod", "644", service_target], capture_output=True)
-                installed = True
-            else:
-                res2 = subprocess.run(f"sudo cp {temp_service} {service_target} && sudo chmod 644 {service_target}", shell=True)
-                installed = (res2.returncode == 0)
-
-        cmds = [
-            "systemctl daemon-reload 2>/dev/null || sudo systemctl daemon-reload 2>/dev/null || true",
-            "systemctl enable labsentinel.service 2>/dev/null || sudo systemctl enable labsentinel.service 2>/dev/null || true"
-        ]
-        for c in cmds:
-            subprocess.run(c, shell=True, capture_output=True)
-
-        if installed or os.path.exists(service_target):
-            print_success("Inicio automático configurado en systemd (labsentinel.service)." if lang == "es" else "Systemd autostart enabled (labsentinel.service).")
-            return True
-        else:
-            print_warning("Aviso: No se pudo registrar en /etc/systemd/system/. El sistema iniciará en modo daemon." if lang == "es" else "Notice: Could not register in /etc/systemd/system/. System will run in daemon mode.")
-            return False
-
-    elif system == "Windows":
-        print_info("Registrando servicio de inicio automático en Windows..." if lang == "es" else "Configuring Windows Startup...")
-        try:
-            start_bat = os.path.join(root_dir, "start_sentinel_bg.bat")
-            silent_vbs = os.path.join(root_dir, "start_sentinel_silent.vbs")
-            py_exe = sys.executable
-            pyw_exe = py_exe.replace("python.exe", "pythonw.exe") if "python.exe" in py_exe else py_exe
-            chosen_py = pyw_exe if os.path.exists(pyw_exe) else py_exe
-            backend_dir = os.path.join(root_dir, "labsentinel_backend")
-            
-            with open(start_bat, "w", encoding="utf-8") as f:
-                f.write('@echo off\n')
-                f.write(f'cd /d "{backend_dir}"\n')
-                f.write(f'start "" /b "{chosen_py}" -m uvicorn main:app --host 0.0.0.0 --port 8001\n')
-                f.write('timeout /t 3 /nobreak >nul\n')
-                f.write('start "" http://localhost:8001\n')
-
-            with open(silent_vbs, "w", encoding="utf-8") as f:
-                f.write('Set WshShell = CreateObject("WScript.Shell")\n')
-                f.write(f'WshShell.Run "cmd /c """ & "{start_bat}" & """", 0, False\n')
-
-            # 1. Intentar Task Scheduler (ONLOGON en segundo plano silencioso)
-            task_cmd = f'schtasks /Create /TN "SentinelOS_Service" /TR "wscript.exe \\\"{silent_vbs}\\\"" /SC ONLOGON /F'
-            res = subprocess.run(task_cmd, shell=True, capture_output=True)
-            if res.returncode == 0:
-                print_success("Inicio automático configurado en segundo plano (Windows Task Scheduler)." if lang == "es" else "Silent background autostart scheduled in Windows Task Scheduler.")
-                return True
-
-            # 2. Fallback: Carpeta de Inicio de Windows (Startup folder silenciosa)
-            appdata = os.environ.get("APPDATA")
-            if appdata:
-                startup_dir = os.path.join(appdata, r"Microsoft\Windows\Start Menu\Programs\Startup")
-                if os.path.exists(startup_dir):
-                    startup_vbs = os.path.join(startup_dir, "SentinelOS_AutoStart.vbs")
-                    with open(startup_vbs, "w", encoding="utf-8") as f:
-                        f.write('Set WshShell = CreateObject("WScript.Shell")\n')
-                        f.write(f'WshShell.Run "cmd /c """ & "{start_bat}" & """", 0, False\n')
-                    print_success("Inicio automático configurado en segundo plano en Inicio de Windows." if lang == "es" else "Silent background service registered in Windows Startup folder.")
-                    return True
-
-            return False
-        except Exception as e:
-            print_warning(f"Aviso al configurar autoinicio: {e}")
-            return False
-
-    return False
-
-def disable_autostart(os_info: dict, root_dir: str):
-    """Limpia tareas programadas si el usuario decidió no habilitar el autoinicio."""
-    system = os_info["system"]
-    if system == "Windows":
-        try:
-            subprocess.run('schtasks /Delete /TN "SentinelOS_Service" /F', shell=True, capture_output=True)
-            appdata = os.environ.get("APPDATA")
-            if appdata:
-                startup_bat = os.path.join(appdata, r"Microsoft\Windows\Start Menu\Programs\Startup\SentinelOS_AutoStart.cmd")
-                if os.path.exists(startup_bat):
-                    os.remove(startup_bat)
-            start_bat = os.path.join(root_dir, "start_sentinel_bg.bat")
-            if os.path.exists(start_bat):
-                os.remove(start_bat)
-        except Exception:
-            pass
-    elif system == "Linux":
-        try:
-            subprocess.run("systemctl disable labsentinel.service 2>/dev/null || true", shell=True, capture_output=True)
-        except Exception:
-            pass
+def configure_autostart():
+    print("[*] Configurando autoarranque de SentinelOS...")
+    try:
+        if sys.platform == "win32":
+            startup = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+            if startup.exists():
+                bat = startup / "sentinel_autostart.bat"
+                bat.write_text(f'@echo off\ncd /d "{Path(__file__).parent.parent}"\npython -m installer --daemon\n', encoding="utf-8")
+                print(f"[+] Entrada de inicio registrada en: {bat}")
+        elif sys.platform.startswith("linux"):
+            autostart_dir = Path.home() / ".config" / "autostart"
+            autostart_dir.mkdir(parents=True, exist_ok=True)
+            desktop = autostart_dir / "sentinelos.desktop"
+            desktop.write_text(f"""[Desktop Entry]
+Type=Application
+Exec=python3 {Path(__file__).parent.parent / "installer" / "__main__.py"} --daemon
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=SentinelOS Autostart
+""", encoding="utf-8")
+            print(f"[+] Autoarranque configurado en: {desktop}")
+    except Exception as e:
+        print(f"[!] Nota sobre autoarranque: {e}")
