@@ -169,7 +169,7 @@ def _choose_ollama_model(preferred_model: str, installed_models: List[str]) -> s
     clean_models = [name.strip() for name in installed_models if isinstance(name, str) and name.strip()]
     normalized = {name.casefold(): name for name in clean_models}
     aliases = {
-        "sentinel-master:titan": ["sentinel-agentic-1b:latest", "sentinel:latest", "sentinel-fast:latest"],
+        "sentinel-master:titan": ["sentinel:latest", "sentinel-fast:latest", "sentinel-agentic-1b:latest"],
         "sentinel:latest": ["sentinel-agentic-1b:latest", "sentinel-fast:latest"],
         "sentinel-fast:latest": ["sentinel-agentic-1b:latest", "sentinel:latest"],
     }
