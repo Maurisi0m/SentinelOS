@@ -22,7 +22,15 @@ Comandos disponibles:
 
 def handle_cli():
     args = sys.argv[1:]
-    if not args or args[0] in ("-h", "--help", "help"):
+    if not args:
+        # Si se ejecuta 'sentinel' sin argumentos, abrir la consola interactiva completa
+        from installer.node_token import ensure_token
+        from installer.__main__ import run_interactive_cli
+        token = ensure_token()
+        run_interactive_cli(3000, token)
+        return
+
+    if args[0] in ("-h", "--help", "help"):
         print_help()
         return
 
