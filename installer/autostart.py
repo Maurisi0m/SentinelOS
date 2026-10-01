@@ -6,9 +6,11 @@ Soporta Systemd en Linux y Task Scheduler + Shell Startup en Windows para inicio
 """
 import os, sys, subprocess, shutil
 from .banner import print_success, print_warning, print_info
+from .service_config import get_service_port
 
-def configure_autostart(os_info: dict, root_dir: str, lang="es") -> bool:
+def configure_autostart(os_info: dict, root_dir: str, lang="es", port: int | None = None) -> bool:
     system = os_info["system"]
+    port = port or get_service_port(root_dir)
     
     if system == "Linux":
         print_info("Configurando servicios en systemd para inicio automático..." if lang == "es" else "Configuring systemd service for autostart...")
@@ -27,7 +29,7 @@ After=network.target
 [Service]
 User={current_user}
 WorkingDirectory={backend_dir}
-ExecStart={py_bin} -m uvicorn main:app --host 0.0.0.0 --port 8001
+ExecStart={py_bin} -m uvicorn main:app --host 0.0.0.0 --port {port}
 Restart=always
 RestartSec=3
 StandardOutput=journal
@@ -86,9 +88,9 @@ WantedBy=multi-user.target
             with open(start_bat, "w", encoding="utf-8") as f:
                 f.write('@echo off\n')
                 f.write(f'cd /d "{backend_dir}"\n')
-                f.write(f'start "" /b "{chosen_py}" -m uvicorn main:app --host 0.0.0.0 --port 8001\n')
+                f.write(f'start "" /b "{chosen_py}" -m uvicorn main:app --host 0.0.0.0 --port {port}\n')
                 f.write('timeout /t 3 /nobreak >nul\n')
-                f.write('start "" http://localhost:8001\n')
+                f.write(f'start "" http://localhost:{port}\n')
 
             with open(silent_vbs, "w", encoding="utf-8") as f:
                 f.write('Set WshShell = CreateObject("WScript.Shell")\n')

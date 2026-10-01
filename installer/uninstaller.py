@@ -3,7 +3,7 @@
 """
 SENTINEL OS - Desinstalador Universal y Seguro (Uninstaller Guard) v2.5
 Realiza una desinstalación 100% limpia y completa:
-1. Identifica y termina todos los procesos de SentinelOS y libera el puerto 8001.
+1. Identifica y termina todos los procesos de SentinelOS y libera los puertos de servicio 8001/8002.
 2. Elimina todas las tareas programadas y accesos de inicio automático (Startup y systemd).
 3. Remueve las reglas de Firewall (Windows Defender / WFP / Linux UFW) y restaura el estado.
 4. Borra todos los accesos directos (.lnk y .desktop) en TODOS los directorios de Escritorio
@@ -50,8 +50,8 @@ def _path_is_within(path: str, root_dir: str) -> bool:
         return False
 
 
-def _is_sentinel_backend_process(proc, root_dir: str) -> bool:
-    """Match only Sentinel's own backend/launcher, never every Python process or port owner."""
+def _is_sentinel_backend_process(proc, root_dir: str, include_other_installs: bool = False) -> bool:
+    """Match Sentinel backends by command and project files, never every Python process or port owner."""
     try:
         info = proc.info
         cmdline = info.get("cmdline") or []
@@ -74,6 +74,11 @@ def _is_sentinel_backend_process(proc, root_dir: str) -> bool:
     if not (is_uvicorn or is_launcher):
         return False
 
+    if include_other_installs and is_uvicorn and os.path.basename(cwd).casefold() == "labsentinel_backend":
+        backend_markers = ("main.py", "mesh_engine.py", "sentinel_service.py")
+        if all(os.path.isfile(os.path.join(cwd, marker)) for marker in backend_markers):
+            return True
+
     root_marker = os.path.normcase(os.path.realpath(root_dir)).casefold()
     command_has_root = root_marker in os.path.normcase(command).casefold()
     return (
@@ -83,8 +88,8 @@ def _is_sentinel_backend_process(proc, root_dir: str) -> bool:
     )
 
 
-def kill_sentinel_processes(root_dir: str = None) -> dict:
-    """Stop only backend processes belonging to this install root; leave unrelated port owners alone."""
+def kill_sentinel_processes(root_dir: str = None, include_other_installs: bool = True) -> dict:
+    """Stop Sentinel backend copies from this machine; leave unrelated port owners alone."""
     root_dir = os.path.realpath(root_dir or os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     result = {"stopped": [], "failed": []}
     try:
@@ -103,7 +108,7 @@ def kill_sentinel_processes(root_dir: str = None) -> dict:
 
     candidates = []
     for proc in psutil.process_iter(attrs=["pid", "name", "exe", "cmdline", "cwd"]):
-        if proc.pid in protected or not _is_sentinel_backend_process(proc, root_dir):
+        if proc.pid in protected or not _is_sentinel_backend_process(proc, root_dir, include_other_installs):
             continue
         candidates.append(proc)
 
@@ -279,7 +284,7 @@ def run_full_uninstall(os_info: dict, root_dir: str, lang: str = "es", purge_ven
     print(f"\n{Colors.BOLD}{Colors.RED}╭── DESINSTALACIÓN COMPLETA DE SENTINEL OS ─────────────────────────╮{Colors.RESET}")
     
     # 1. Terminar procesos
-    print_info("1/6 Deteniendo únicamente los procesos de esta instalación..." if lang == "es" else "1/6 Stopping processes owned by this installation...")
+    print_info("1/6 Deteniendo los backends SentinelOS de este equipo..." if lang == "es" else "1/6 Stopping SentinelOS backends on this machine...")
     processes = kill_sentinel_processes(root_dir)
     time.sleep(0.5)
     if processes["failed"]:

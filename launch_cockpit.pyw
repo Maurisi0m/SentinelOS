@@ -1,13 +1,17 @@
 import os, sys, time, subprocess, urllib.request, webbrowser
+from installer.service_config import get_service_port
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.join(ROOT_DIR, "labsentinel_backend")
+PORT = get_service_port(ROOT_DIR)
 
 def is_running():
     try:
-        req = urllib.request.Request("http://127.0.0.1:8001/api/data", headers={"User-Agent": "SentinelLauncher"})
-        with urllib.request.urlopen(req, timeout=1.5) as r:
-            return r.status == 200
+        req = urllib.request.Request(f"http://127.0.0.1:{PORT}/api/data", headers={"User-Agent": "SentinelLauncher"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            import json
+            payload = json.loads(r.read().decode("utf-8"))
+            return r.status == 200 and isinstance(payload, dict) and isinstance(payload.get("system"), dict)
     except Exception:
         return False
 
@@ -27,7 +31,7 @@ def main():
             CREATE_NEW_PROCESS_GROUP = 0x00000200
             CREATE_NO_WINDOW = 0x08000000
             subprocess.Popen(
-                [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"],
+                [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", str(PORT)],
                 cwd=BACKEND_DIR,
                 stdout=log_out,
                 stderr=log_out,
@@ -39,7 +43,7 @@ def main():
             log_file = os.path.join(ROOT_DIR, "sentinel_backend.log")
             log_out = open(log_file, "a", encoding="utf-8")
             subprocess.Popen(
-                [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"],
+                [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", str(PORT)],
                 cwd=BACKEND_DIR,
                 stdout=log_out,
                 stderr=log_out,
@@ -52,7 +56,7 @@ def main():
             if is_running():
                 break
 
-    webbrowser.open("http://127.0.0.1:8001")
+    webbrowser.open(f"http://127.0.0.1:{PORT}")
 
 if __name__ == "__main__":
     main()

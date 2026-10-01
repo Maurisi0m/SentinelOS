@@ -4,7 +4,7 @@
 SENTINEL OS - CLI Manager (Comandos de Terminal del Sistema) v2.5
 Proporciona comandos de terminal intuitivos y universales disponibles en el PATH:
 - sentinel active   (o sentinel start)  : Inicializa el sistema y servicio en segundo plano
-- sentinel stop                         : Detiene el sistema y libera el puerto 8001
+- sentinel stop                         : Detiene el sistema y libera los puertos 8001/8002
 - sentinel restart                      : Reinicia el servicio
 - sentinel status                       : Muestra el estado operativo, IPs y recursos
 - sentinel logs                         : Visualiza los logs en tiempo real
@@ -23,7 +23,12 @@ import urllib.request
 import subprocess
 from .banner import Colors, print_success, print_warning, print_info, print_error
 from .port_guard import get_process_on_port
+from .port_guard import check_and_resolve_port
 from .uninstaller import kill_sentinel_processes, run_full_uninstall
+from .service_config import get_service_port, set_service_port
+from .system_detector import get_detailed_os
+from .firewall import configure_firewall_rule
+from .autostart import configure_autostart
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BACKEND_DIR = os.path.join(ROOT_DIR, "labsentinel_backend")
@@ -42,22 +47,46 @@ def get_lan_ip() -> str:
         except Exception:
             return "127.0.0.1"
 
-def is_backend_healthy() -> bool:
+def is_backend_healthy(port: int | None = None) -> bool:
+    port = port or get_service_port(ROOT_DIR)
     try:
-        req = urllib.request.Request("http://127.0.0.1:8001/api/health", headers={"User-Agent": "SentinelCLI"})
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/health", headers={"User-Agent": "SentinelCLI"})
         with urllib.request.urlopen(req, timeout=1.5) as r:
-            return r.status == 200
+            if r.status != 200:
+                return False
+        data_req = urllib.request.Request(f"http://127.0.0.1:{port}/api/data", headers={"User-Agent": "SentinelCLI"})
+        with urllib.request.urlopen(data_req, timeout=30) as r:
+            payload = json.loads(r.read().decode("utf-8"))
+            return r.status == 200 and isinstance(payload, dict) and isinstance(payload.get("system"), dict)
     except Exception:
         return False
 
 def cmd_active():
     """Inicializa el sistema SentinelOS en segundo plano y verifica su funcionamiento."""
     print(f"\n{Colors.BOLD}{Colors.CYAN}╭── INICIALIZANDO SENTINEL OS (MODO OPERATIVO) ───────────────────────╮{Colors.RESET}")
-    pid, _ = get_process_on_port(8001)
-    if pid > 0 and is_backend_healthy():
-        print_success(f"SentinelOS ya está activo y operando en segundo plano (PID: {pid}).")
+    port = get_service_port(ROOT_DIR)
+    pid, _ = get_process_on_port(port)
+    if pid > 0:
+        if is_backend_healthy(port):
+            print_success(f"SentinelOS ya está activo y operando en segundo plano (PID: {pid}).")
+        else:
+            print_error(f"Hay un proceso escuchando en {port}, pero /api/data no respondió con telemetría. No iniciaré otra copia. Revisa 'sentinel logs'.")
+            return
     else:
-        print_info("Iniciando servicio de SentinelOS en segundo plano (Puerto 8001)...")
+        configured_port = port
+        port, _ = check_and_resolve_port(port=port, lang="es", root_dir=ROOT_DIR)
+        set_service_port(ROOT_DIR, port)
+        if port != configured_port:
+            os_info = get_detailed_os()
+            configure_firewall_rule(os_info, port=port, lang="es", root_dir=ROOT_DIR)
+            has_autostart = (
+                os.path.exists(os.path.join(ROOT_DIR, "start_sentinel_bg.bat"))
+                or os.path.exists("/etc/systemd/system/labsentinel.service")
+                or os.path.exists("/lib/systemd/system/labsentinel.service")
+            )
+            if has_autostart:
+                configure_autostart(os_info, ROOT_DIR, "es", port=port)
+        print_info(f"Iniciando servicio de SentinelOS en segundo plano (Puerto {port})...")
         if sys.platform == "win32":
             venv_pyw = os.path.join(ROOT_DIR, ".venv", "Scripts", "pythonw.exe")
             venv_py = os.path.join(ROOT_DIR, ".venv", "Scripts", "python.exe")
@@ -70,7 +99,7 @@ def cmd_active():
             CREATE_NO_WINDOW = 0x08000000
 
             subprocess.Popen(
-                [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"],
+                [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", str(port)],
                 cwd=BACKEND_DIR,
                 stdout=log_out,
                 stderr=log_out,
@@ -87,7 +116,7 @@ def cmd_active():
                 py_bin = venv_py if os.path.exists(venv_py) else sys.executable
                 log_out = open(LOG_FILE, "a", encoding="utf-8")
                 subprocess.Popen(
-                    [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"],
+                    [py_bin, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", str(port)],
                     cwd=BACKEND_DIR,
                     stdout=log_out,
                     stderr=log_out,
@@ -98,7 +127,7 @@ def cmd_active():
         ready = False
         for _ in range(15):
             time.sleep(0.4)
-            if is_backend_healthy():
+            if is_backend_healthy(port):
                 ready = True
                 break
 
@@ -108,8 +137,8 @@ def cmd_active():
             print_warning("El servicio se inició, pero la respuesta de salud tardó más de lo previsto.")
 
     lan_ip = get_lan_ip()
-    print(f"\n  {Colors.BOLD}🌐 Enlace Localhost:{Colors.RESET}       {Colors.CYAN}http://127.0.0.1:8001{Colors.RESET}")
-    print(f"  {Colors.BOLD}📡 Enlace Red Local (LAN):{Colors.RESET} {Colors.GREEN}http://{lan_ip}:8001{Colors.RESET} (Sin requerir Internet)")
+    print(f"\n  {Colors.BOLD}🌐 Enlace Localhost:{Colors.RESET}       {Colors.CYAN}http://127.0.0.1:{port}{Colors.RESET}")
+    print(f"  {Colors.BOLD}📡 Enlace Red Local (LAN):{Colors.RESET} {Colors.GREEN}http://{lan_ip}:{port}{Colors.RESET} (Sin requerir Internet)")
     
     # Token
     auth_file = os.path.join(ROOT_DIR, "config", "node_auth.json")
@@ -153,16 +182,17 @@ def cmd_restart():
 
 def cmd_status():
     """Muestra el estado en tiempo real del servicio y de la red."""
-    pid, name = get_process_on_port(8001)
-    healthy = is_backend_healthy()
+    port = get_service_port(ROOT_DIR)
+    pid, name = get_process_on_port(port)
+    healthy = is_backend_healthy(port)
     lan_ip = get_lan_ip()
 
     print(f"\n{Colors.BOLD}{Colors.CYAN}╭── ESTADO DEL SISTEMA SENTINEL OS ──────────────────────────────────╮{Colors.RESET}")
     if pid > 0 and healthy:
         print(f"  Estado:        {Colors.GREEN}● OPERATIVO Y SALUDABLE{Colors.RESET}")
         print(f"  PID:           {pid} ({name})")
-        print(f"  Puerto:        8001 (Abierto)")
-        print(f"  IP LAN:        http://{lan_ip}:8001")
+        print(f"  Puerto:        {port} (Abierto)")
+        print(f"  IP LAN:        http://{lan_ip}:{port}")
         print(f"  Modo:          100% Autónomo (Funcional con o sin Internet)")
     elif pid > 0:
         print(f"  Estado:        {Colors.YELLOW}▲ PROCESO ACTIVO PERO RESPONDIENDO LENTO{Colors.RESET}")
@@ -189,11 +219,16 @@ def cmd_logs():
 
 def cmd_open():
     """Abre el panel en el navegador predeterminado."""
-    if not is_backend_healthy():
+    port = get_service_port(ROOT_DIR)
+    if not is_backend_healthy(port):
         print_info("Iniciando servicio previamente...")
         cmd_active()
+        port = get_service_port(ROOT_DIR)
+        if not is_backend_healthy(port):
+            print_error("Cockpit no se abrirá hasta que /api/data responda correctamente.")
+            return
     import webbrowser
-    webbrowser.open("http://127.0.0.1:8001")
+    webbrowser.open(f"http://127.0.0.1:{port}")
 
 def cmd_hotspot():
     """Crea un punto de acceso Wi-Fi local para conectar laptops/servidores sin router ni internet."""
@@ -236,7 +271,7 @@ def cmd_help():
 
 {Colors.BOLD}Comandos disponibles:{Colors.RESET}
   {Colors.GREEN}sentinel active{Colors.RESET}    Arranca SentinelOS en segundo plano y muestra enlaces LAN
-  {Colors.GREEN}sentinel stop{Colors.RESET}      Detiene todos los procesos y libera el puerto 8001
+  {Colors.GREEN}sentinel stop{Colors.RESET}      Detiene todos los procesos y libera los puertos 8001/8002
   {Colors.GREEN}sentinel restart{Colors.RESET}   Reinicia el servicio de telemetría y API
   {Colors.GREEN}sentinel status{Colors.RESET}    Muestra estado del nodo, PID, memoria e IPs de red
   {Colors.GREEN}sentinel logs{Colors.RESET}      Sigue los registros de eventos y errores en vivo

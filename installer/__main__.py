@@ -26,8 +26,9 @@ from .service_runner import start_and_verify_services
 from .node_token import get_or_create_node_auth
 from .firewall import configure_firewall_rule, remove_firewall_rule, check_firewall_rule
 from .desktop_shortcut import configure_desktop_shortcuts, remove_desktop_shortcuts
-from .port_guard import check_and_resolve_port
-from .uninstaller import run_full_uninstall
+from .port_guard import check_and_resolve_port, is_sentinel_install_on_port
+from .service_config import get_service_port, set_service_port
+from .uninstaller import kill_sentinel_processes, run_full_uninstall
 from .cli import install_cli_to_path
 import webbrowser
 import subprocess
@@ -57,20 +58,32 @@ def detect_existing_installation(root_dir: str, os_info: dict) -> dict:
 
     is_running = False
     live_info = {}
-    try:
-        req = urllib.request.Request("http://127.0.0.1:8001/api/node/token", headers={"User-Agent": "SentinelInstaller"})
-        with urllib.request.urlopen(req, timeout=1.5) as resp:
-            if resp.status == 200:
-                is_running = True
-                live_info = json.loads(resp.read().decode())
-    except Exception:
+    active_port = get_service_port(root_dir)
+    for probe_port in dict.fromkeys([active_port, 8001, 8002]):
         try:
-            req_root = urllib.request.Request("http://127.0.0.1:8001/", headers={"User-Agent": "SentinelInstaller"})
-            with urllib.request.urlopen(req_root, timeout=1) as resp:
+            req = urllib.request.Request(f"http://127.0.0.1:{probe_port}/api/health", headers={"User-Agent": "SentinelInstaller"})
+            with urllib.request.urlopen(req, timeout=2) as resp:
                 if resp.status == 200:
+                    data_req = urllib.request.Request(f"http://127.0.0.1:{probe_port}/api/data", headers={"User-Agent": "SentinelInstaller"})
+                    with urllib.request.urlopen(data_req, timeout=30) as data_resp:
+                        telemetry = json.loads(data_resp.read().decode("utf-8"))
+                        if data_resp.status != 200 or not isinstance(telemetry, dict) or not isinstance(telemetry.get("system"), dict):
+                            continue
+                    if is_sentinel_install_on_port(probe_port, root_dir) is False:
+                        continue
                     is_running = True
+                    active_port = probe_port
+                    try:
+                        info_req = urllib.request.Request(f"http://127.0.0.1:{probe_port}/api/node/token", headers={"User-Agent": "SentinelInstaller"})
+                        with urllib.request.urlopen(info_req, timeout=2) as info_resp:
+                            live_info = json.loads(info_resp.read().decode())
+                    except Exception:
+                        pass
+                    break
         except Exception:
             pass
+    if is_running:
+        set_service_port(root_dir, active_port)
 
     has_autostart = False
     if os_info.get("system") == "Linux":
@@ -79,7 +92,7 @@ def detect_existing_installation(root_dir: str, os_info: dict) -> dict:
         has_autostart = os.path.exists(start_bat)
 
     # Una instalación SOLO se considera existente si:
-    # 1. El servicio está corriendo en vivo en el puerto 8001 (is_running), O
+    # 1. Salud y telemetría del servicio responden en vivo, O
     # 2. Tiene credenciales reales guardadas (has_valid_auth) Y (tiene autostart programado o launcher configurado)
     is_installed = is_running or (has_valid_auth and (has_autostart or os.path.exists(launcher_pyw)))
 
@@ -88,7 +101,8 @@ def detect_existing_installation(root_dir: str, os_info: dict) -> dict:
         "is_running": is_running,
         "live_info": live_info,
         "node_auth": auth_data if has_valid_auth else {},
-        "has_autostart": has_autostart
+        "has_autostart": has_autostart,
+        "port": active_port,
     }
 
 def auto_bootstrap_venv():
@@ -257,7 +271,7 @@ def main():
         node_name = existing["live_info"].get("node_name") or existing["node_auth"].get("node_name") or os_info.get("hostname") or "Sentinel-Node"
         node_id = existing["live_info"].get("node_id") or existing["node_auth"].get("node_id") or "node-live"
         token = existing["live_info"].get("token") or existing["node_auth"].get("token") or "sntl_live_active"
-        status_badge = f"{Colors.GREEN}● EN LÍNEA (http://127.0.0.1:8001){Colors.RESET}" if existing["is_running"] else f"{Colors.YELLOW}○ DETENIDO (Listo para arrancar){Colors.RESET}"
+        status_badge = f"{Colors.GREEN}● EN LÍNEA (http://127.0.0.1:{existing['port']}){Colors.RESET}" if existing["is_running"] else f"{Colors.YELLOW}○ DETENIDO (Listo para arrancar){Colors.RESET}"
         autostart_str = f"{Colors.GREEN}Activo (Inicio con Sistema){Colors.RESET}" if existing["has_autostart"] else f"{Colors.DIM}No programado{Colors.RESET}"
 
         print(f"{Colors.BOLD}{Colors.CYAN}╭── ⚡ INSTALACIÓN EXISTENTE DE SENTINEL OS DETECTADA ────────────────╮{Colors.RESET}")
@@ -279,16 +293,23 @@ def main():
         choice = print_prompt("Selecciona una opción", "1")
 
         if choice in ["", "1"]:
-            configure_desktop_shortcuts(ROOT_DIR, os_info, "es")
             if not existing["is_running"]:
-                start_and_verify_services(os_info, ROOT_DIR, "es")
+                healthy, local_base = start_and_verify_services(os_info, ROOT_DIR, "es")
             else:
                 print_success("El servidor ya está en ejecución y saludable.")
-            try:
-                print_info("Abriendo panel de control en tu navegador predeterminado...")
-                webbrowser.open("http://127.0.0.1:8001")
-            except Exception:
-                pass
+                healthy = True
+                local_base = f"http://127.0.0.1:{existing['port']}"
+            if healthy:
+                active_port = int(local_base.rsplit(":", 1)[-1])
+                if existing["has_autostart"]:
+                    configure_autostart(os_info, ROOT_DIR, "es", port=active_port)
+                configure_firewall_rule(os_info, port=active_port, lang="es", root_dir=ROOT_DIR)
+                configure_desktop_shortcuts(ROOT_DIR, os_info, "es")
+                try:
+                    print_info("Abriendo panel de control en tu navegador predeterminado...")
+                    webbrowser.open(local_base)
+                except Exception:
+                    pass
             _close_terminal_smoothly(os_info, "es")
             return
 
@@ -296,14 +317,24 @@ def main():
             print_step("Iniciando actualización y verificación de componentes...")
             ensure_python_libraries("es")
             check_frontend_assets(ROOT_DIR, "es")
-            configure_firewall_rule(os_info, port=8001, lang="es")
-            configure_desktop_shortcuts(ROOT_DIR, os_info, "es")
-            start_and_verify_services(os_info, ROOT_DIR, "es")
-            try:
-                print_info("Abriendo panel de control en tu navegador predeterminado...")
-                webbrowser.open("http://127.0.0.1:8001")
-            except Exception:
-                pass
+            stopped = kill_sentinel_processes(ROOT_DIR)
+            if stopped["failed"]:
+                print_error(f"No pude detener backends de SentinelOS para actualizarla: {', '.join(map(str, stopped['failed']))}")
+                healthy = False
+                local_base = f"http://127.0.0.1:{get_service_port(ROOT_DIR)}"
+            else:
+                healthy, local_base = start_and_verify_services(os_info, ROOT_DIR, "es")
+            if healthy:
+                active_port = int(local_base.rsplit(":", 1)[-1])
+                if existing["has_autostart"]:
+                    configure_autostart(os_info, ROOT_DIR, "es", port=active_port)
+                configure_firewall_rule(os_info, port=active_port, lang="es", root_dir=ROOT_DIR)
+                configure_desktop_shortcuts(ROOT_DIR, os_info, "es")
+                try:
+                    print_info("Abriendo panel de control en tu navegador predeterminado...")
+                    webbrowser.open(f"{local_base}/?first_run=1")
+                except Exception:
+                    pass
             _close_terminal_smoothly(os_info, "es")
             return
 
@@ -313,6 +344,10 @@ def main():
 
         elif choice == "4":
             print_warning("Limpiando configuración previa para reinstalación limpia...")
+            stopped = kill_sentinel_processes(ROOT_DIR)
+            if stopped["failed"]:
+                print_error(f"No pude detener los procesos actuales: {', '.join(map(str, stopped['failed']))}. No continuaré para evitar una reinstalación mezclada.")
+                return
             auth_file = os.path.join(ROOT_DIR, "config", "node_auth.json")
             if os.path.exists(auth_file):
                 try:
@@ -391,7 +426,7 @@ def main():
         print("      - Genera el Token y la IP para vincularlo a tu Laptop Maestra.\n")
 
         print(f"  {Colors.BOLD}[B]{Colors.RESET} {Colors.GREEN}Servidor Híbrido / Cockpit Multi-Nodo (Interfaz Web Propia + Enlace a otros Cockpits){Colors.RESET}")
-        print("      - Proporciona su propia interfaz web Cockpit accesible en red local (http://IP:8001).")
+        print("      - Proporciona su propia interfaz web Cockpit accesible en red local (puerto HTTP configurado).")
         print("      - Levanta el demonio permanente en segundo plano con inicio automático.")
         print("      - Genera el Token PIN para vincularse bidireccionalmente con otros Cockpits de la red.\n")
 
@@ -411,6 +446,10 @@ def main():
         node_role = "master"
 
     print_success(f"Modo de nodo establecido: {node_role.upper()}\n")
+
+    print_step("Reservando un puerto HTTP de SentinelOS (8001 o 8002)...")
+    service_port, _ = check_and_resolve_port(port=get_service_port(ROOT_DIR), lang="es", root_dir=ROOT_DIR)
+    set_service_port(ROOT_DIR, service_port)
 
     # -------------------------------------------------------------
     # PASO 3: CATÁLOGO DE SKILLS & MÓDULOS CON SUBMENÚS
@@ -471,7 +510,7 @@ def main():
     auto_choice = input(prompt_auto).strip().lower()
     autostart_enabled = (auto_choice not in ['n', 'no'])
     if autostart_enabled:
-        configure_autostart(os_info, ROOT_DIR, lang)
+        configure_autostart(os_info, ROOT_DIR, lang, port=service_port)
     else:
         disable_autostart(os_info, ROOT_DIR)
         print_info("Inicio automático omitido por el usuario." if lang == "es" else "Autostart skipped by user.")
@@ -480,30 +519,31 @@ def main():
     # PASO 6: CONEXIÓN SEGURA TAILSCALE ZERO-CONFIG
     # -------------------------------------------------------------
     print_header(i18n.t("step4"), "6/7")
-    ts_data = setup_tailscale_interactive(lang)
+    ts_data = setup_tailscale_interactive(lang, http_port=service_port)
     remote_url = ts_data.get("url", "")
     ts_ip = ts_data.get("ip", "")
     ts_account = ts_data.get("account", "")
     ts_tailnet = ts_data.get("tailnet", "")
 
     # -------------------------------------------------------------
-    # PASO 6.5: REGLA DE CORTAFUEGOS (WINDOWS DEFENDER / LINUX UFW)
-    # -------------------------------------------------------------
-    print_header("Seguridad de Red y Cortafuegos / Firewall Guard", "6.5/7")
-    print_info("Permitir que otros equipos en tu red LAN / Wi-Fi se conecten a este servidor." if lang == "es" else "Allow other machines on your LAN/Wi-Fi to connect to this server.")
-    fw_choice = input("¿Deseas habilitar la regla de firewall para el puerto 8001? (S/n): " if lang == "es" else "Enable firewall rule for port 8001? (Y/n): ").strip().lower()
-    if fw_choice not in ['n', 'no']:
-        configure_firewall_rule(os_info, port=8001, lang=lang)
-    print()
-
-    # -------------------------------------------------------------
     # PASO 7: DESPLIEGUE REAL Y VERIFICACIÓN EN VIVO HTTP
     # -------------------------------------------------------------
     print_header(i18n.t("step5"), "7/7")
-    is_healthy, local_base = start_and_verify_services(os_info, ROOT_DIR, lang)
+    is_healthy, local_base = start_and_verify_services(os_info, ROOT_DIR, lang, port=service_port)
+    if is_healthy:
+        service_port = int(local_base.rsplit(":", 1)[-1])
+        set_service_port(ROOT_DIR, service_port)
+
+    # Abrir firewall únicamente en el puerto real que ya respondió a la API de telemetría.
+    print_header("Seguridad de Red y Cortafuegos / Firewall Guard", "6.5/7")
+    print_info(f"Permitir que otros equipos de tu LAN se conecten por TCP {service_port}.")
+    fw_choice = input(f"¿Deseas habilitar la regla de firewall para el puerto {service_port}? (S/n): ").strip().lower()
+    if is_healthy and fw_choice not in ['n', 'no']:
+        configure_firewall_rule(os_info, port=service_port, lang=lang, root_dir=ROOT_DIR)
+    print()
 
     # Configurar acceso directo en Escritorio y Menú Inicio para el Cockpit
-    if node_role != "server_headless":
+    if node_role != "server_headless" and is_healthy:
         configure_desktop_shortcuts(ROOT_DIR, os_info, lang)
     
     # Instalar comandos 'sentinel' en el PATH del sistema
@@ -514,7 +554,7 @@ def main():
         print_warning(f"Aviso instalación CLI en PATH: {e}")
 
     lan_ip = get_lan_ip()
-    local_display_url = f"http://{lan_ip}:8001"
+    local_display_url = f"http://{lan_ip}:{service_port}"
     node_auth = get_or_create_node_auth(ROOT_DIR)
 
     # -------------------------------------------------------------
@@ -525,17 +565,18 @@ def main():
         print("  🔑  SERVIDOR ACTIVO EN MODO HEADLESS (CONEXIÓN A DASHBOARD MAESTRO)")
         print("═" * 74 + f"{Colors.RESET}")
         print(f"  {Colors.BOLD}🖥️  Nombre del Servidor:{Colors.RESET}        {node_auth.get('node_name', 'Sentinel-Server')}")
-        print(f"  {Colors.BOLD}🌐  Dirección IP Local (LAN):{Colors.RESET}   {Colors.CYAN}http://{lan_ip}:8001{Colors.RESET}")
+        print(f"  {Colors.BOLD}🌐  Dirección IP Local (LAN):{Colors.RESET}   {Colors.CYAN}{local_display_url}{Colors.RESET}")
         if ts_ip:
-            print(f"  {Colors.BOLD}🔒  Dirección IP Tailscale:{Colors.RESET}     {Colors.CYAN}http://{ts_ip}:8001{Colors.RESET}")
+            print(f"  {Colors.BOLD}🔒  Dirección IP Tailscale:{Colors.RESET}     {Colors.CYAN}http://{ts_ip}:{service_port}{Colors.RESET}")
         print(f"  {Colors.BOLD}🔑  Token de Conexión PIN:{Colors.RESET}      {Colors.GREEN}{node_auth.get('token')}{Colors.RESET}")
-        print(f"  {Colors.BOLD}📡  Estado del Servicio:{Colors.RESET}        {Colors.GREEN}ACTIVO 24/7 EN SEGUNDO PLANO (Sin UI local){Colors.RESET}\n")
+        server_status = f"{Colors.GREEN}ACTIVO 24/7 EN SEGUNDO PLANO (Sin UI local){Colors.RESET}" if is_healthy else f"{Colors.RED}NO VALIDADO: backend/telemetría requieren revisión{Colors.RESET}"
+        print(f"  {Colors.BOLD}📡  Estado del Servicio:{Colors.RESET}        {server_status}\n")
         print(f"  {Colors.YELLOW}Instrucciones de vinculación con tu Laptop Maestra:{Colors.RESET}")
-        print("  1. Abre el Cockpit en tu Laptop Maestra (http://127.0.0.1:8001).")
+        print("  1. Abre el Cockpit en tu Laptop Maestra.")
         print("  2. En el menú superior o barra lateral pulsa en '[+ Conectar Servidor]'.")
         print(f"  3. Pega los siguientes datos de este servidor:")
         print(f"     • Host / IP:  {lan_ip} (o la IP de Tailscale: {ts_ip if ts_ip else lan_ip})")
-        print(f"     • Puerto:     8001")
+        print(f"     • Puerto:     {service_port}")
         print(f"     • Token PIN:  {node_auth.get('token')}\n")
         print(f"{Colors.BOLD}{Colors.CYAN}" + "═" * 74 + f"{Colors.RESET}\n")
 
@@ -543,19 +584,20 @@ def main():
         print("\n" + f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74)
         print("  ✨  SERVIDOR HÍBRIDO ACTIVO: WEB PROPIA + VINCULACIÓN A MAESTRO")
         print("═" * 74 + f"{Colors.RESET}")
-        print(f"  {Colors.BOLD}💻  Interfaz Web del Servidor:{Colors.RESET}   {Colors.CYAN}http://{lan_ip}:8001{Colors.RESET} (Comprobado ✔)")
+        print(f"  {Colors.BOLD}💻  Interfaz Web del Servidor:{Colors.RESET}   {Colors.CYAN}{local_display_url}{Colors.RESET}{' (Comprobado ✔)' if is_healthy else ' (API no validada)'}")
         print(f"  {Colors.BOLD}🔑  Token para Laptop Maestra:{Colors.RESET}   {Colors.GREEN}{node_auth.get('token')}{Colors.RESET}")
         if ts_ip:
-            print(f"  {Colors.BOLD}🔒  IP Tailscale Segura:{Colors.RESET}        {Colors.CYAN}http://{ts_ip}:8001{Colors.RESET}")
-        print(f"  {Colors.BOLD}📡  Estado del Servicio:{Colors.RESET}        {Colors.GREEN}OPERATIVO 24/7{Colors.RESET}\n")
+            print(f"  {Colors.BOLD}🔒  IP Tailscale Segura:{Colors.RESET}        {Colors.CYAN}http://{ts_ip}:{service_port}{Colors.RESET}")
+        server_status = f"{Colors.GREEN}OPERATIVO 24/7{Colors.RESET}" if is_healthy else f"{Colors.RED}NO VALIDADO: backend/telemetría requieren revisión{Colors.RESET}"
+        print(f"  {Colors.BOLD}📡  Estado del Servicio:{Colors.RESET}        {server_status}\n")
         print(f"  {Colors.YELLOW}Datos para vincular a tu Laptop Maestra:{Colors.RESET}")
-        print(f"  • Host: {lan_ip} | Puerto: 8001 | Token: {node_auth.get('token')}\n")
+        print(f"  • Host: {lan_ip} | Puerto: {service_port} | Token: {node_auth.get('token')}\n")
         print(f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74 + f"{Colors.RESET}\n")
 
         open_web = input("¿Deseas abrir la interfaz gráfica local en este servidor? (s/N): ").strip().lower()
-        if open_web in ['s', 'si', 'y']:
+        if open_web in ['s', 'si', 'y'] and is_healthy:
             try:
-                webbrowser.open(f"http://127.0.0.1:8001")
+                webbrowser.open(f"{local_base}/?first_run=1")
             except Exception:
                 pass
 
@@ -564,10 +606,10 @@ def main():
         print("\n" + f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74)
         print(f"  🎉  {i18n.t('success_title')}")
         print("═" * 74 + f"{Colors.RESET}")
-        print(f"  {Colors.BOLD}💻  Enlace Localhost:{Colors.RESET}           {Colors.CYAN}http://127.0.0.1:8001{Colors.RESET} (Comprobado ✔)")
-        print(f"  {Colors.BOLD}🌐  Enlace Red Local (LAN):{Colors.RESET}     {Colors.CYAN}{local_display_url}{Colors.RESET} (Comprobado ✔)")
+        print(f"  {Colors.BOLD}💻  Enlace Localhost:{Colors.RESET}           {Colors.CYAN}{local_base}{Colors.RESET}{' (Comprobado ✔)' if is_healthy else ' (API no validada)'}")
+        print(f"  {Colors.BOLD}🌐  Enlace Red Local (LAN):{Colors.RESET}     {Colors.CYAN}{local_display_url}{Colors.RESET}{' (Comprobado ✔)' if is_healthy else ' (API no validada)'}")
         if ts_ip:
-            print(f"  {Colors.BOLD}🔒  IP Red Segura Tailscale:{Colors.RESET}   {Colors.CYAN}http://{ts_ip}:8001{Colors.RESET} (Comprobado ✔)")
+            print(f"  {Colors.BOLD}🔒  IP Red Segura Tailscale:{Colors.RESET}   {Colors.CYAN}http://{ts_ip}:{service_port}{Colors.RESET}")
         if ts_account:
             print(f"  {Colors.BOLD}👤  Cuenta Tailscale:{Colors.RESET}          {Colors.CYAN}{ts_account}{Colors.RESET} ({ts_tailnet})")
         if remote_url:
@@ -580,12 +622,15 @@ def main():
         print(f"{Colors.BOLD}{Colors.GREEN}" + "═" * 74 + f"{Colors.RESET}\n")
 
         open_web = input("¿Deseas abrir el panel en tu navegador predeterminado ahora? (S/n): " if lang == "es" else "Open cockpit in browser now? (Y/n): ").strip().lower()
-        if open_web not in ['n', 'no']:
+        if open_web not in ['n', 'no'] and is_healthy:
             try:
                 print_info("Abriendo panel de control en tu navegador predeterminado..." if lang == "es" else "Opening cockpit in default browser...")
-                webbrowser.open("http://127.0.0.1:8001")
+                webbrowser.open(f"{local_base}/?first_run=1")
             except Exception:
                 pass
+
+    if not is_healthy:
+        print_warning("No se abrirá Cockpit porque /api/data no validó. Revisa sentinel_backend.log y vuelve a iniciar el instalador para reparar.")
 
     _close_terminal_smoothly(os_info, lang)
 

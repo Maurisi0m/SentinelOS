@@ -11,6 +11,7 @@ import secrets
 import socket
 import platform
 from datetime import datetime
+from .service_config import get_service_port
 
 def get_machine_name() -> str:
     try:
@@ -29,6 +30,7 @@ def get_or_create_node_auth(root_dir: str) -> dict:
             with open(auth_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if data.get("token") and data.get("node_id"):
+                    data["port"] = get_service_port(root_dir)
                     return data
         except Exception:
             pass
@@ -41,7 +43,7 @@ def get_or_create_node_auth(root_dir: str) -> dict:
         "node_name": get_machine_name(),
         "token": token,
         "created_at": datetime.now().isoformat(),
-        "port": 8001
+        "port": get_service_port(root_dir)
     }
 
     try:

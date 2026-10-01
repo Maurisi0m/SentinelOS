@@ -11,6 +11,19 @@ import SentinelCockpit from './components/SentinelCockpit';
 import NetworkTopologyView from './components/NetworkTopologyView';
 
 const API_URL = "/api";
+const SERVICE_HTTP_PORT = window.location.port || '80';
+const FIRST_RUN = new URLSearchParams(window.location.search).get('first_run') === '1';
+
+if (FIRST_RUN) {
+  try {
+    localStorage.removeItem('sentinel_connected_servers');
+    localStorage.removeItem('sentinel_welcome_seen_v2');
+    localStorage.removeItem('sentinel_onboarding_completed');
+  } catch (e) {}
+  try {
+    window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+  } catch (e) {}
+}
 
 const CustomSlider = ({ min, max, step, value, onChangeCommit, onChangeDrag }) => {
   const [localVal, setLocalVal] = React.useState(value);
@@ -37,6 +50,7 @@ const CustomSlider = ({ min, max, step, value, onChangeCommit, onChangeDrag }) =
 function App() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
   const [showSentinelIntro, setShowSentinelIntro] = useState(false);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
@@ -48,7 +62,7 @@ function App() {
   // Multi-Server Permanent Connections & Telemetry State
   const [connectedServers, setConnectedServers] = useState(() => {
     try {
-      const saved = localStorage.getItem('sentinel_connected_servers');
+      const saved = FIRST_RUN ? null : localStorage.getItem('sentinel_connected_servers');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
@@ -816,15 +830,21 @@ function App() {
   };
 
   const lastAptFetchRef = useRef(0);
+  const fetchDataInFlightRef = useRef(false);
   const fetchData = async () => {
+    if (fetchDataInFlightRef.current) return;
+    fetchDataInFlightRef.current = true;
     try {
-      const res = await fetch(`${API_URL}/data`, { signal: AbortSignal.timeout(2000) });
-      if (res.ok) {
-        const rdata = await res.json();
-        setData(rdata);
-        if (rdata.notifications && rdata.notifications.length > 0) {
-          rdata.notifications.forEach(n => addNotification(n.msg, n.type));
-        }
+      const res = await fetch(`${API_URL}/data`, { signal: AbortSignal.timeout(30000) });
+      if (!res.ok) throw new Error(`/api/data respondió HTTP ${res.status}`);
+      const rdata = await res.json();
+      if (!rdata || typeof rdata !== 'object' || !rdata.system) {
+        throw new Error('/api/data respondió, pero no contiene telemetría del sistema');
+      }
+      setData(rdata);
+      setApiError('');
+      if (rdata.notifications && rdata.notifications.length > 0) {
+        rdata.notifications.forEach(n => addNotification(n.msg, n.type));
       }
       
       // Consultar servicios solo cuando el usuario está en la pestaña procesos
@@ -852,7 +872,9 @@ function App() {
       }
     } catch (e) {
       console.error("fetchData error:", e);
+      setApiError(e?.message || 'No se pudo completar la solicitud a /api/data');
     } finally {
+      fetchDataInFlightRef.current = false;
       setLoading(false);
     }
   };
@@ -1192,8 +1214,15 @@ function App() {
     };
   }, [terminalPopupApp?.status, terminalPopupApp?.app?.id]);
 
-  if (loading && !data) return <div style={{padding: '2rem'}}>Booting Lab Sentinel OS...</div>;
-  if (!data) return <div style={{padding: '2rem'}}>System Offline. Cannot connect to backend.</div>;
+  if (loading && !data) return <div style={{padding: '2rem'}}>Conectando con SentinelOS en {window.location.origin}…</div>;
+  if (!data) return (
+    <div style={{ padding: '2rem', color: '#e2e8f0', maxWidth: '720px', margin: '12vh auto' }}>
+      <h2 style={{ marginBottom: '0.6rem' }}>System Offline. Cannot connect to backend.</h2>
+      <p style={{ color: '#94a3b8' }}>Cockpit está intentando conectar con el backend de este equipo.</p>
+      <p style={{ color: '#fca5a5', overflowWrap: 'anywhere' }}>{apiError || `No hay respuesta de ${window.location.origin}/api/data`}</p>
+      <button className="btn btn-primary" onClick={() => { setLoading(true); fetchData(); }}>Reintentar conexión</button>
+    </div>
+  );
 
   const history = data.metrics_history || [];
   const current = history[history.length - 1] || { cpu: 0, ram: 0, temp: 0, net_rx: 0, net_tx: 0, disk_r: 0, disk_w: 0 };
@@ -5043,7 +5072,7 @@ function App() {
               {data?.system?.hostname || 'Sentinel Host'} <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 400 }}>({data?.system?.os || 'Sistema Operativo'})</span>
             </div>
             <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'monospace' }}>
-              IP: {data?.network?.local_ip || '127.0.0.1'} | Puerto: 8001 | Firewall: Abierto
+              IP: {data?.network?.local_ip || '127.0.0.1'} | Puerto: {SERVICE_HTTP_PORT} | Firewall: Abierto
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
@@ -5312,6 +5341,9 @@ function App() {
 
   return (
     <div className="os-container">
+      {/* La guía aparece en primera ejecución o cuando el instalador reinicia la bienvenida. */}
+      {showWelcomeModal && renderWelcomeModal()}
+
       {/* Modal de Conexión y Gestión de Servidores */}
       {serverModalOpen && renderServerModal()}
 

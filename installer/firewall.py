@@ -88,7 +88,7 @@ def check_firewall_rule(os_info: dict, port: int = 8001) -> bool:
 
 def configure_firewall_rule(os_info: dict, port: int = 8001, lang: str = "es", root_dir: str = None) -> tuple[bool, str]:
     """
-    Configura y abre las reglas de firewall para TCP 8001, UDP 8001 y binarios de Python.
+    Configura y abre las reglas de firewall para el puerto SentinelOS seleccionado y binarios de Python.
     Ajusta perfil de red y exclusiones de antivirus automáticamente.
     """
     system = os_info.get("system", "Linux")
@@ -212,7 +212,7 @@ def _run_linux_firewall_command(args: list[str]) -> subprocess.CompletedProcess:
 def remove_firewall_rule(os_info: dict, port: int = 8001, lang: str = "es", root_dir: str = None) -> bool:
     """Remove SentinelOS-owned firewall entries and its matching Defender exclusion."""
     system = os_info.get("system", "Linux")
-    ports = sorted({int(port), int(port) + 1, 8003})
+    ports = sorted({int(port), 8001, 8002, 8003})
 
     if system == "Windows":
         names = [RULE_NAME, RULE_NAME_UDP, RULE_NAME_PY, RULE_NAME_PYW]

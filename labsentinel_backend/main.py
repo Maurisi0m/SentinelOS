@@ -63,6 +63,19 @@ import shlex
 app = FastAPI(title="Lab Sentinel OS API")
 
 
+def _configured_service_port() -> int:
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "service.json")
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            port = int(json.load(f).get("http_port", 8001))
+        return port if port in (8001, 8002) else 8001
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return 8001
+
+
+SERVICE_PORT = _configured_service_port()
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -517,7 +530,7 @@ async def metric_collector():
 async def startup_event():
     asyncio.create_task(metric_collector())
     asyncio.create_task(arp_scanner_loop())
-    start_mesh_engine(port=8001, get_telemetry_fn=collect_data)
+    start_mesh_engine(port=SERVICE_PORT, get_telemetry_fn=collect_data)
 
 _CACHED_SYSTEM_DATA = None
 _LAST_FULL_SCAN_TIME = 0.0
@@ -1005,13 +1018,13 @@ async def mesh_heartbeat(request: Request):
 @app.get("/mesh/nodes")
 def mesh_nodes():
     """Retorna todos los nodos descubiertos en la malla y sus rutas alternativas."""
-    return {"nodes": get_mesh_nodes(), "candidates": get_self_network_candidates(port=8001)}
+    return {"nodes": get_mesh_nodes(), "candidates": get_self_network_candidates(port=SERVICE_PORT)}
 
 @app.post("/api/mesh/scan")
 @app.post("/mesh/scan")
 def mesh_scan():
     """Ejecuta un escaneo rápido en la subred local /24 para descubrir nodos SentinelOS."""
-    found = scan_lan_subnet(port=8001)
+    found = scan_lan_subnet(port=SERVICE_PORT)
     return {"status": "ok", "scanned": len(found), "found": found, "nodes": get_mesh_nodes()}
 
 @app.post("/api/remote/proxy")
@@ -1044,7 +1057,7 @@ async def remote_proxy_post(request: Request, target_url: str):
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "time": time.time()}
+    return {"status": "ok", "port": SERVICE_PORT, "time": time.time()}
 
 def get_node_auth():
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1055,8 +1068,12 @@ def get_node_auth():
         try:
             with open(auth_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                if data.get("token") and data.get("node_id"):
-                    return data
+            if data.get("token") and data.get("node_id"):
+                if data.get("port") != SERVICE_PORT:
+                    data["port"] = SERVICE_PORT
+                    with open(auth_file, "w", encoding="utf-8") as updated:
+                        json.dump(data, updated, indent=2)
+                return data
         except Exception:
             pass
     node_id = f"node-{secrets.token_hex(4)}"
@@ -1066,7 +1083,7 @@ def get_node_auth():
         "node_name": socket.gethostname(),
         "token": token,
         "created_at": datetime.now().isoformat(),
-        "port": 8001
+        "port": SERVICE_PORT
     }
     try:
         with open(auth_file, "w", encoding="utf-8") as f:
@@ -1087,7 +1104,7 @@ def get_node_info():
         "cores": psutil.cpu_count(logical=True),
         "total_ram_gb": round(psutil.virtual_memory().total / (1024**3), 1),
         "version": "2.0.0",
-        "endpoints": get_self_network_candidates(port=8001)
+        "endpoints": get_self_network_candidates(port=SERVICE_PORT)
     }
 
 @app.get("/api/node/token")
@@ -1098,7 +1115,7 @@ def get_node_token():
         "token": auth_data.get("token", ""),
         "node_id": auth_data.get("node_id", "node-sentinel"),
         "node_name": auth_data.get("node_name", socket.gethostname()),
-        "port": 8001
+        "port": SERVICE_PORT
     }
 
 @app.websocket("/api/ws/model/download")
@@ -1428,7 +1445,7 @@ def get_sys_logs():
             f"[{now_str}] [INFO] SentinelOS Kernel Telemetry Active. Uptime: {uptime_s}s",
             f"[{now_str}] [INFO] Host System: {platform.system()} {platform.release()} ({platform.machine()})",
             f"[{now_str}] [INFO] Core Hardware: {psutil.cpu_count(logical=True)} vCPUs | {round(psutil.virtual_memory().total / (1024**3), 1)} GB RAM",
-            f"[{now_str}] [INFO] Sockets: FastAPI & Uvicorn daemon listening on 0.0.0.0:8001 (HTTP 200 OK)",
+            f"[{now_str}] [INFO] Sockets: FastAPI & Uvicorn daemon listening on 0.0.0.0:{SERVICE_PORT} (HTTP 200 OK)",
             f"[{now_str}] [SUCCESS] Subsystem health check: ALL PASS"
         ]
         return {"logs": "\n".join(sample_logs)}
@@ -2622,4 +2639,4 @@ if os.path.isdir(dist_dir):
 else:
     @app.get("/")
     def index_root():
-        return {"status": "SentinelOS Core Online", "port": 8001}
+        return {"status": "SentinelOS Core Online", "port": SERVICE_PORT}

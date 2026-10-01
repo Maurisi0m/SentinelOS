@@ -49,7 +49,7 @@ def check_frontend_assets(root_dir: str, lang="es") -> bool:
     if os.path.exists(index_html):
         msg_ok = "Interfaz web (Cockpit) pre-compilada detectada en labsentinel_backend/dist/." if lang == "es" else "Pre-compiled web interface (Cockpit) detected in labsentinel_backend/dist/."
         print_success(msg_ok)
-        msg_info = "No se requiere Node.js, npm ni Vite. El servidor web entrega la interfaz directamente en el puerto 8001." if lang == "es" else "Node.js, npm, and Vite are NOT required. The backend serves pre-compiled assets directly on port 8001."
+        msg_info = "No se requiere Node.js, npm ni Vite. El servidor web entrega la interfaz directamente en el puerto HTTP configurado." if lang == "es" else "Node.js, npm, and Vite are NOT required. The backend serves pre-compiled assets directly on the configured HTTP port."
         print_info(msg_info)
         return True
 

@@ -198,7 +198,7 @@ def install_tailscale_system(lang="es") -> str:
     time.sleep(3)
     return check_tailscale_path()
 
-def login_tailscale_with_qr_and_browser(ts_bin: str, lang="es") -> dict:
+def login_tailscale_with_qr_and_browser(ts_bin: str, lang="es", http_port: int = 8001) -> dict:
     """
     Inicia sesión en Tailscale mostrando código QR en la consola
     y abriendo simultáneamente el enlace directo de registro/login en el navegador.
@@ -342,7 +342,7 @@ def login_tailscale_with_qr_and_browser(ts_bin: str, lang="es") -> dict:
         # Configurar Tailscale Serve para HTTPS si está disponible
         try:
             subprocess.run([ts_bin, "serve", "--reset"], capture_output=True, timeout=5)
-            subprocess.run([ts_bin, "serve", "--bg", "8001"], capture_output=True, timeout=5)
+            subprocess.run([ts_bin, "serve", "--bg", str(http_port)], capture_output=True, timeout=5)
         except Exception:
             pass
 
@@ -356,7 +356,7 @@ def login_tailscale_with_qr_and_browser(ts_bin: str, lang="es") -> dict:
 
     return {"url": "", "ip": "", "domain": ""}
 
-def setup_tailscale_interactive(lang="es") -> dict:
+def setup_tailscale_interactive(lang="es", http_port: int = 8001) -> dict:
     """
     Configuración inteligente de Tailscale:
     1. Si ya está instalado y conectado -> Informa al usuario su cuenta, tailnet e IP y pregunta si desea usarla.
@@ -369,7 +369,7 @@ def setup_tailscale_interactive(lang="es") -> dict:
     # CASO 1: TAILSCALE YA ESTÁ INSTALADO EN EL SISTEMA
     # =========================================================================
     if ts_bin:
-        configure_external_firewall_access(8001, lang)
+        configure_external_firewall_access(http_port, lang)
         details = get_tailscale_details(ts_bin)
 
         # SUB-CASO 1.A: Ya tiene una sesión activa y conectada
@@ -396,7 +396,7 @@ def setup_tailscale_interactive(lang="es") -> dict:
                 # Configurar Serve HTTPS
                 try:
                     subprocess.run([ts_bin, "serve", "--reset"], capture_output=True, timeout=5)
-                    subprocess.run([ts_bin, "serve", "--bg", "8001"], capture_output=True, timeout=5)
+                    subprocess.run([ts_bin, "serve", "--bg", str(http_port)], capture_output=True, timeout=5)
                 except Exception:
                     pass
                 return {
@@ -414,7 +414,7 @@ def setup_tailscale_interactive(lang="es") -> dict:
                         subprocess.run([ts_bin, "logout"], capture_output=True, timeout=5)
                     except Exception:
                         pass
-                    return login_tailscale_with_qr_and_browser(ts_bin, lang)
+                    return login_tailscale_with_qr_and_browser(ts_bin, lang, http_port)
                 else:
                     print_info("Omitiendo configuración de Tailscale. Operando en modo LAN local.")
                     return {"url": "", "ip": "", "domain": ""}
@@ -431,7 +431,7 @@ def setup_tailscale_interactive(lang="es") -> dict:
 
             start_login = input("¿Deseas iniciar sesión o registrar tu cuenta de Tailscale ahora? (S/n): ").strip().lower()
             if start_login not in ['n', 'no']:
-                return login_tailscale_with_qr_and_browser(ts_bin, lang)
+                return login_tailscale_with_qr_and_browser(ts_bin, lang, http_port)
             else:
                 print_info("Omitiendo Tailscale. SentinelOS funcionará en modo Red Local (LAN).")
                 return {"url": "", "ip": "", "domain": ""}
@@ -460,5 +460,5 @@ def setup_tailscale_interactive(lang="es") -> dict:
         print_info("Puedes instalarlo manualmente desde: https://tailscale.com/download")
         return {"url": "", "ip": "", "domain": ""}
 
-    configure_external_firewall_access(8001, lang)
-    return login_tailscale_with_qr_and_browser(ts_bin, lang)
+    configure_external_firewall_access(http_port, lang)
+    return login_tailscale_with_qr_and_browser(ts_bin, lang, http_port)
