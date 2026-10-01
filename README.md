@@ -1,122 +1,264 @@
-# 🛡️ SentinelOS (v2.0)
-### *Sistema Operativo Cognitivo Distribuido para Laboratorios STEM, Centros de Cómputo e Investigación*
+# SentinelOS (v2.0) - Sistema Operativo Cognitivo Distribuido
 
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](#-despliegue-con-docker)
-[![Tailscale](https://img.shields.io/badge/Tailscale-Zero--Config-4A5568?logo=tailscale&logoColor=white)](#-tailscale-zero-config--qr)
-[![LLM Inference](https://img.shields.io/badge/Local%20LLM-Haswell%20AVX2-FF6F00?logo=intel&logoColor=white)](#-motor-cognitivo-stem)
-[![Multi-Server](https://img.shields.io/badge/Fleet-Sentinel%20Mesh-10B981)](#-sentinel-mesh-monitoreo-multi-servidor)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+Plataforma de infraestructura y telemetria distribuida para centros de computo, laboratorios de investigacion y servidores de mision critica. Integra gestion de flota multi-nodo, descubrimiento de malla por red local o tuneles cifrados, motor de inferencia agentica especializado en terminal y administracion de sistemas, y un panel de control interactivo en tiempo real.
 
 ---
 
-## 📌 ¿Qué es SentinelOS?
+## 1. Arquitectura General del Sistema
 
-**SentinelOS** es una plataforma integral de código abierto diseñada para transformar servidores ordinarios en **centros cognitivos de telemetría, gestión y docencia STEM**. Permite controlar, supervisar y asistir técnicamente en tiempo real laboratorios escolares, makerspaces, nodos de computación y servidores de investigación.
+SentinelOS opera bajo un modelo de arquitectura distribuida hibrida compuesto por tres capas principales:
 
-Integra un **motor de lenguaje local purificado (SLM 1B / 3B)** acelerado por CPU AVX2, interfaz web aeroespacial en React (Cockpit), conexión distribuida por túneles cifrados y un sistema de plugins modulares.
-
-```mermaid
-graph TD
-    subgraph "Red Privada Cifrada (Tailscale Mesh)"
-        Core["🖥️ SENTINEL CORE (Servidor Central)"]
-        Node1["💻 Nodo 1: Lab Cómputo (Aula A)"]
-        Node2["🖨️ Nodo 2: Taller Robótica & 3D (Klipper)"]
-        Node3["⚡ Nodo 3: Servidor de GPU & IA"]
-    end
-
-    Node1 -- "Métricas en Vivo (CPU/RAM/Sesiones)" --> Core
-    Node2 -- "Telemetría Térmica + G-Code" --> Core
-    Node3 -- "Métricas VRAM/Cálculo" --> Core
-
-    Admin["👨‍🔬 Administrador / Estudiante"] -->|"HTTPS Único (QR Auth)"| Core
+```
++-----------------------------------------------------------------------------------+
+|                            CAPA DE CONTROL Y VISUALIZACION                        |
+|   Sentinel Cockpit (React 19 + Vite + Canvas Telemetry + Terminal Interactiva)    |
++-----------------------------------------------------------------------------------+
+                                         |
+                       HTTP / REST / WebSockets / SSE
+                                         |
++-----------------------------------------------------------------------------------+
+|                            CAPA DE SERVICIOS Y COMUNICACION                       |
+|   Sentinel Backend (FastAPI + AsyncIO + Uvicorn)                                  |
+|   - Gestor de Telemetria del Host (CPU, RAM, GPU, Discos, Red, Temperatura)      |
+|   - Motor Mesh UDP LAN (Beacon 8002 / Discovery 8001)                             |
+|   - Proxy Cifrado Multi-Nodo & Enrutador Satelite con Tokens Bearer              |
+|   - Modulo de Descarga WebSocket de Modelos de Inteligencia Artificial           |
+|   - Hotspot Wi-Fi Autonomo para Redes Aisladas (Air-Gapped)                       |
++-----------------------------------------------------------------------------------+
+                                         |
+                   Inferencia Local / Protocolo ReAct Atómico
+                                         |
++-----------------------------------------------------------------------------------+
+|                            CAPA COGNITIVA Y DE TERMINAL                           |
+|   Sentinel-Agentic-1B (GGUF Q4_K_M en Docker Ollama / llama-server AVX2)          |
+|   - Protocolo: [THOUGHT] -> [EXECUTE] -> [OUTPUT] (Sin Sobrecarga JSON)          |
+|   - Dominio Estricto: Linux, Windows, macOS, Docker, STEM y Cirugia de Archivos   |
+|   - Vector de Rechazo Out-of-Domain (Astrologia, Farandula, Poesia, Cocina)       |
++-----------------------------------------------------------------------------------+
 ```
 
 ---
 
-## ✨ Características Principales
+## 2. Frontend: Sentinel Cockpit
 
-* 🐳 **Universal & Dockerizado:** Cero problemas de *"en mi máquina sí funciona"*. Se despliega con Docker Compose en cualquier distribución de Linux, macOS o Windows (WSL2).
-* 🧠 **Motor Cognitivo STEM Local:** Asistente especializado en matemáticas, física, ingeniería y código. Funciona a más de **20 tokens/segundo** en CPUs Haswell i5 gracias a la optimización vectorial AVX2 nativa y cuantización Q4_K_M.
-* 🌐 **Sentinel Mesh (Monitoreo de Flota):** Conecta decenas de servidores satélite a tu servidor principal. Monitorea en vivo uso de CPU, RAM, GPU (NVIDIA/Intel), temperaturas, sesiones activas y ejecuta comandos autorizados.
-* 🔒 **Tailscale Zero-Config con QR:** Autenticación instantánea en la terminal escaneando un código QR desde el móvil. Genera un dominio HTTPS seguro (`https://labsentinel.ts.net`) sin abrir puertos en el router.
-* 🧩 **Catálogo Modular de Skills:**
-  - 🖨️ **Klipper & Moonraker:** Monitoreo y control de impresoras 3D.
-  - 🎙️ **Voice Core:** Reconocimiento de voz local con Faster-Whisper y síntesis Piper-TTS.
-  - 🏠 **Alexa Bridge:** Integración domótica para laboratorios inteligentes.
-  - 🛡️ **Pentesting & Topología:** Escaneo perimetral LAN, nmap y mapa interactivo de equipos.
+El panel de control visual esta construido sobre React 19 y empaquetado con Vite, estilizado con un tema Cyberpunk Dark y tipografia de grado industrial sin dependencias de frameworks CSS externos.
+
+### Caracteristicas Principales
+* **Telemetria de Alto Rendimiento:** Visualizacion dinamica de metricas de CPU, memoria fisica, almacenamiento, uso de GPU (NVIDIA NVML e Intel), temperatura de nucleos y procesos activos.
+* **Optimizacion de Intervalos de Polling:**
+  * Telemetria del nodo local: Sondeo cada 3000 ms.
+  * Telemetria de nodos satelite conectados: Sondeo cada 5000 ms para mitigar la saturacion del hilo de renderizado de React en despliegues con mas de dos servidores concurrentes.
+  * Verificacion de estado de Internet: Intervalo desacoplado cada 30000 ms con almacenamiento en cache local.
+* **Gestor de Modelos de Inteligencia Artificial (Modulo IA DESCARGAR):**
+  * Modal integrado para la descarga directa de pesos en formato GGUF u Ollama.
+  * Conectividad bidireccional por WebSocket (`/api/ws/model/download`) que transmite en tiempo real la tasa de transferencia, bloques descargados y porcentaje de avance.
+  * Presets oficiales integrados, incluyendo el enlace directo al repositorio de Hugging Face (`Maurisi0m/Sentinel-Agentic-1B`).
+  * Inyeccion automatica en el contenedor Docker Ollama tras finalizar la transferencia.
+* **Terminal Operativa ReAct:** Consola interactiva para envio de instrucciones tecnicas al modelo agentico local, con renderizado de bloques de ejecucion y enlaces tecnicos Obsidian `[[Concepto]]`.
+* **Topologia de Red y Escaneo Mesh:** Descubrimiento automatico de servidores satelite mediante beacons UDP en la red local y asignacion automatica a la lista de servidores monitorizados.
 
 ---
 
-## 🚀 Instalación Rápida (One-Line Setup)
+## 3. Backend: Servidor de Aplicacion y Enrutamiento
 
-Clona el repositorio en tu servidor o computadora y ejecuta el asistente interactivo:
+El nucleo del servicio esta implementado en Python 3 utilizando FastAPI y ejecutado bajo Uvicorn en el puerto 8001.
 
-### En Linux (Ubuntu, Debian, Fedora, Arch) / macOS:
-```bash
-git clone https://github.com/tu-usuario/SentinelOS.git
-cd SentinelOS
-chmod +x setup.sh
-./setup.sh
+### Componentes Funcionales
+* **`labsentinel_backend/main.py`:** Punto de entrada del servidor.
+  * `GET /api/data`: Entrega instantanea de metricas del host (CPU, memoria, discos, red, GPU, sensores termicos).
+  * `GET /api/node/token`: Validacion y entrega de tokens de autenticacion del nodo local (`sntl_live_...`).
+  * `GET /api/mesh/nodes` y `POST /api/mesh/heartbeat`: Gestion del mapa de nodos descubiertos via beacon UDP LAN.
+  * `POST /api/remote/proxy`: Mecanismo de retransmision segura para consultar servidores satelite cuando existen politicas de aislamiento perimetral.
+  * `POST /api/network/hotspot/create`: Despliegue automatico de un punto de acceso Wi-Fi local para operar en entornos sin conexion a internet o router central.
+  * `WS /api/ws/model/download`: Canal de comunicacion en tiempo real para recepcion de ordenes de descarga de modelos de lenguaje, ejecucion de subprocesos y transmision de logs al frontend.
+* **Seguridad y Control de Acceso:**
+  * Configuracion CORS permisiva para integracion fluida entre nodos satelite en subredes locales y tuneles Tailscale.
+  * Middleware de autenticacion por cabecera `Authorization: Bearer <token>` para endpoints de administracion y ejecucion.
+  * Desacoplamiento de llamadas bloqueantes de red con tiempos de espera estrictos de 3 segundos para evitar caidas del ciclo de eventos AsyncIO.
+
+---
+
+## 4. Capa Cognitiva: Sentinel-Agentic-1B
+
+El motor de lenguaje de SentinelOS fue entrenado especificamente para actuar como operador autonomo de terminal y asistente STEM en infraestructuras locales con recursos computacionales limitados.
+
+### Ficha Tecnica del Modelo
+* **Nombre:** Sentinel-Agentic-1B
+* **Arquitectura Base:** Llama-3.2-1B-Instruct (Meta AI / Unsloth)
+* **Parametros Totales:** 1,230 Millones (1.23B)
+* **Formato de Entrega:** GGUF Cuantizado Q4_K_M (808 MB)
+* **Repositorio Oficial Hugging Face:** `https://huggingface.co/Maurisi0m/Sentinel-Agentic-1B`
+* **Enlace de Descarga Directa:** `https://huggingface.co/Maurisi0m/Sentinel-Agentic-1B/resolve/main/sentinel-agentic-1b.Q4_K_M.gguf`
+
+### Metodologia de Entrenamiento y Convergencia
+* **Hardware de Entrenamiento:** GPU NVIDIA GeForce RTX 5060 Laptop (8 GB VRAM, CUDA FP16/BF16).
+* **Tecnica de Ajuste:** QLoRA de alta precision sobre los modulos `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj` y `lm_head` ($r=64$, $\alpha=128$, dropout 0.05).
+* **Optimizador:** Paged AdamW 8-bit con decaimiento cosenoidal y tasa de aprendizaje $2 \times 10^{-4}$.
+* **Volumen:** 11,500 steps de optimizacion continua sobre un dataset sintético multi-turno de administracion de sistemas y resolucion de problemas ReAct.
+* **Metricas Clave de Convergencia:**
+  * **Perdida Inicial (Step 1):** 4.0406
+  * **Perdida Final (Step 11,500):** 0.0225 (-99.44% de reduccion de error).
+  * **Perplejidad Final:** 1.022 PPL (convergencia determinista).
+  * **Precision de Tokens:** 98.4% en comandos de terminal y operadores logicos.
+  * **Norma de Gradiente (L2):** Descenso de 10.51 a 0.020, sin explosiones de gradiente ni divergencias numericas.
+
+### Protocolo Operativo ReAct (Sin Tool Calling JSON)
+A diferencia de los modelos tradicionales que consumen entre 600 y 1,200 tokens describiendo esquemas JSON, Sentinel-Agentic-1B emplea un protocolo plano basado en etiquetas:
+* `[THOUGHT]`: Analisis previo, diagnostico del estado del sistema y seleccion del comando.
+* `[EXECUTE]`: Comando raw no interactivo para ejecucion directa en Bash, PowerShell o Docker.
+* `[OUTPUT]`: Inyeccion del resultado real capturado por el sistema operativo.
+
+### Desaprendizaje y Rechazo Fuera de Dominio (Machine Unlearning)
+Se aplicaron matrices de steering y desaprendizaje estricto para suprimir respuestas conversacionales o temas ajenos al entorno tecnico:
+* Consultas de astrologia, chismes, farandula, recetas o poemas son interceptadas y rechazadas deterministamente con el mensaje:
+  `Peticion fuera del dominio operacional de SENTINEL. Sistema restringido a STEM y ejecucion de terminal.`
+
+### Rendimiento de Inferencia
+* **Servidor HP (CPU AVX2 Pure C++ llama-server):** 46.8 tokens / segundo (Consumo de RAM: 1.1 GB).
+* **Laptop RTX 5060 (GPU CUDA vLLM / PyTorch):** 128.4 tokens / segundo (Consumo de VRAM: 1.3 GB).
+* **Raspberry Pi 5 (ARM64 Edge):** 18.5 tokens / segundo.
+
+---
+
+## 5. Bateria de Metricas y Evaluacion Comparativa
+
+Los reportes graficos de evaluacion analitica fueron generados a 300 DPI y se encuentran disponibles en el directorio `export/metrics_report/`:
+
+1. `sentinel_comparative_1_loss_convergence.png`:
+   * Comparacion de Cross-Entropy Loss (Base: ~3.96 estancado vs Sentinel: 0.0225).
+   * Perplejidad comparada (Base: 52.5 vs Sentinel: 1.022).
+   * Histograma de densidad de error por secuencia.
+   * Curva de tasa de aprendizaje cosenoidal.
+2. `sentinel_comparative_2_noise_stability.png`:
+   * Indice de ruido residual en representaciones latentes (-98.2% de reduccion).
+   * Relacion Señal-Ruido (SNR): De +4.8 dB a +28.6 dB (Zona de alta confianza).
+   * Norma del gradiente L2 a lo largo de 11,500 steps.
+   * Entropia de prediccion de tokens (reduccion de 3.85 a 0.18 Nats).
+3. `sentinel_comparative_3_operational_gain.png`:
+   * Precision predictiva en terminal (+63.4% de ganancia neta).
+   * Radar de competencias tecnicas (Linux 100%, PowerShell 98.5%, macOS 96%, Archivos 99.2%, Desaprendizaje 100%).
+   * Ahorro de recursos (-97.2% tokens prefill, -71% memoria RAM, -67% disco).
+   * Throughput comparativo en hardware de servidor.
+
+---
+
+## 6. Instalador, Firewall y Herramienta de Linea de Comandos (CLI)
+
+SentinelOS cuenta con un subsistema de instalacion y mantenimiento multiplataforma desacoplado y no intrusivo.
+
+### Instalador Multiplataforma (`installer/`)
+* **Deteccion Automatica de Sistema Operativo:** Compatible con Windows 10/11, Ubuntu 22.04/24.04, Linux Mint, Debian y Arch Linux.
+* **Configuracion de Firewall:**
+  * **Windows:** Agrega reglas de entrada TCP para los puertos 8001 y 8002 mediante `netsh advfirewall` con perfil `profile=any` y genera excepciones directas para el binario de Python.
+  * **Compatibilidad Antivirus de Terceros:** Deteccion automatica de procesos de Avast (`AvastSvc.exe`) y Norton (`Norton Security`), aplicando reglas de paso a nivel de sistema.
+  * **Linux:** Apertura de puertos mediante `ufw allow 8001/tcp` e `iptables`.
+* **Accesos Directos:** Creacion de accesos directos en el escritorio del usuario actual sin forzar la apertura no deseada del navegador en servidores sin entorno grafico (headless).
+
+### Interfaz de Linea de Comandos (CLI `sentinel`)
+El instalador registra el comando `sentinel` de forma nativa en la variable de entorno `PATH` del sistema:
+
+* `sentinel active`: Inicializa y activa los servicios del nodo local en segundo plano.
+* `sentinel stop`: Detiene todos los procesos y daemons asociados a SentinelOS.
+* `sentinel restart`: Reinicia el backend y los adaptadores de red.
+* `sentinel status`: Comprueba el estado de ejecucion, uso de puertos y presencia del proceso principal.
+* `sentinel logs`: Muestra el registro de actividad del sistema en tiempo real.
+* `sentinel uninstall`: Ejecuta el proceso de desinstalacion completa.
+
+### Desinstalador Atomico
+La rutina de desinstalacion (`installer/uninstaller.py`) garantiza la reversion total del entorno:
+1. Finalizacion controlada de todos los procesos `uvicorn`, `python` y daemons de Sentinel.
+2. Eliminacion de las reglas de firewall creadas en Windows (`netsh`) y Linux (`ufw`).
+3. Eliminacion de los accesos directos del escritorio en cualquier plataforma.
+4. Supresion de las entradas de registro y variables `PATH` del sistema.
+5. Eliminacion de arboles de directorios temporales, archivos de configuracion y cache de compilacion.
+6. Sin aperturas forzadas de navegadores web al concluir.
+
+---
+
+## 7. Estructura del Repositorio
+
+```
+Sentinel/
+├── App.jsx                                 # Componente principal de la interfaz React
+├── SentinelCockpit.jsx                     # Panel de telemetria aeroespacial y visualizacion
+├── components/
+│   └── SentinelCockpit.jsx                 # Componentes modulares del panel de control
+├── installer/
+│   ├── __init__.py
+│   ├── __main__.py                         # Orquestador del proceso de instalacion
+│   ├── autostart.py                        # Configuracion de inicio con el sistema
+│   ├── cli.py                              # Entrada de comandos globales de terminal (PATH)
+│   ├── desktop_shortcut.py                 # Generador multiplataforma de accesos directos
+│   ├── firewall.py                         # Gestion de reglas de red y compatibilidad AV
+│   ├── node_token.py                       # Generador y validador de tokens Bearer
+│   ├── port_guard.py                       # Verificacion y liberacion de puertos en conflicto
+│   ├── service_runner.py                   # Lanzador de servicios en segundo plano
+│   ├── tailscale.py                        # Vinculacion automatica con red privada cifrada
+│   └── uninstaller.py                      # Reversion atomica de cambios en el sistema
+├── labsentinel_backend/
+│   ├── main.py                             # API FastAPI, WebSocket, beacons UDP y proxy
+│   ├── sentinel_service.py                 # Gestion de servicios systemd y monitoreo
+│   ├── vault_manager.py                    # Administracion de configuraciones protegidas
+│   └── dist/                               # Bundle compilado de produccion del frontend
+├── training/
+│   ├── agentic_terminal_adapters_1b/       # Checkpoints y pesos LoRA (11,500 steps)
+│   │   └── checkpoint-11500/               # Checkpoint final y trainer_state.json
+│   ├── train_agentic_terminal_1b.py        # Pipeline de entrenamiento supervisado ReAct
+│   ├── comprehensive_test_battery.py       # Suite automatizada de pruebas y calidad
+│   └── test_sentinel_inference.py          # Script de validacion de inferencia local
+├── export/
+│   ├── metrics_report/                     # Graficos comparativos a 300 DPI
+│   │   ├── sentinel_comparative_1_loss_convergence.png
+│   │   ├── sentinel_comparative_2_noise_stability.png
+│   │   └── sentinel_comparative_3_operational_gain.png
+│   └── output_gguf/                        # Binarios GGUF cuantizados
+├── scratch/
+│   ├── update_hp_server.py                 # Script de sincronizacion y despliegue continuo
+│   └── web_build/                          # Directorio de construccion Vite del frontend
+├── generate_three_deep_comparatives.py     # Generador de analisis comparativos en alta definicion
+├── upload_model_hf.py                      # Publicador al Hub de Hugging Face
+└── README.md                               # Documentacion tecnica del sistema
 ```
 
-### En Windows (PowerShell Administrador):
-```powershell
-git clone https://github.com/tu-usuario/SentinelOS.git
-cd SentinelOS
-.\setup.ps1
-```
-
 ---
 
-## 🛠️ Flujo del Asistente Interactivo CLI
+## 8. Despliegue y Puesta en Marcha
 
-Al iniciar el instalador, serás guiado en 5 pasos:
+### Requisitos del Sistema
+* **Sistema Operativo:** Ubuntu 20.04+, Debian 11+, Windows 10/11 (64-bit), macOS Monterey+.
+* **Memoria RAM:** Minimo 2 GB (Recomendado 4 GB para ejecucion simultanea de backend y modelo).
+* **Almacenamiento:** 1.5 GB de espacio libre en disco.
+* **Dependencias:** Python 3.10 o superior, Node.js 18+ (solo para desarrollo de frontend) y Docker (opcional, para aislamiento de Ollama).
 
-1. **Selección de Idioma:** Español o English.
-2. **Selección de Skills:** Elige qué módulos deseas activar. Cada módulo abrirá su propio **submenú interactivo** de configuración.
-3. **Declaración de Uso Ético:** Términos de seguridad y responsabilidad para laboratorios autorizados.
-4. **Tailscale & Código QR:** Se genera un código QR en tu terminal para vincular el servidor con tu cuenta en segundos.
-5. **Orquestación y Activación:** Despliegue de contenedores y presentación de la tarjeta de enlaces finales.
+### Instrucciones de Instalacion
 
----
+1. **Clonar el repositorio:**
+   ```bash
+   git clone https://github.com/Maurisi0m/SentinelOS.git
+   cd SentinelOS
+   ```
 
-## 💻 Sentinel Mesh: ¿Cómo unir servidores satélite?
+2. **Instalar dependencias del entorno de ejecucion:**
+   ```bash
+   python -m pip install -r requirements.txt
+   ```
 
-Una vez que tengas tu servidor principal (**Core**) instalado, vincular cualquier otro equipo del laboratorio toma 1 solo comando:
+3. **Ejecutar el instalador del sistema:**
+   * En Linux / macOS:
+     ```bash
+     python -m installer
+     ```
+   * En Windows:
+     ```powershell
+     python -m installer
+     ```
 
-```bash
-curl -fsSL https://tu-dominio-sentinel.ts.net/api/mesh/join.sh | bash -s -- --token TU_TOKEN_SECRETO
-```
+4. **Operar mediante la linea de comandos global:**
+   ```bash
+   sentinel active
+   sentinel status
+   ```
 
-El nuevo nodo aparecerá de inmediato en el panel del Frontend con su telemetría en tiempo real, temperaturas y terminal remota.
-
----
-
-## 📁 Estructura del Repositorio
-
-```text
-SentinelOS/
-├── setup.sh                 # Bootstrap instalador Linux / macOS
-├── setup.ps1                # Bootstrap instalador Windows
-├── docker-compose.yml       # Stack universal de contenedores
-├── docker/                  # Dockerfiles optimizados (backend, engine, frontend)
-├── installer/               # Asistente TUI interactivo
-│   ├── __main__.py          # Orquestador del wizard
-│   ├── banner.py            # Arte ASCII y estilos ANSI
-│   ├── i18n.py              # Diccionarios multilenguaje
-│   ├── skills/              # Submenús de Klipper, Voz, Red y Mesh
-│   └── tailscale.py         # Automatización de QR y dominio HTTPS
-├── mesh/                    # Agente de telemetría para servidores satélite
-│   ├── sentinel_agent.py    # Daemon ligero multiplataforma
-│   └── join.sh              # Script de auto-inscripción de nodos
-├── labsentinel_backend/     # API FastAPI + WebSockets + Control
-├── dataset/                 # Generadores de datos y esquemas STEM
-└── training/                # Scripts de entrenamiento y cuantización
-```
-
----
-
-## 📜 Licencia
-
-Distribuido bajo la licencia **MIT**. Consulta `LICENSE` para más información.
-Desarrollado para la comunidad educativa, científica y de investigación tecnológica.
+5. **Acceso al Panel de Control:**
+   * Abrir en el navegador local: `http://localhost:8001`
+   * O acceder a traves del dominio seguro de Tailscale asignado al host.
